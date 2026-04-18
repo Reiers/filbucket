@@ -26,16 +26,45 @@ fi
 print_banner() {
   cat <<EOF
 
-${BLUE}        ╭─────────────╮${RESET}
-${BLUE}        │  ${CYAN}████████${BLUE}   │${RESET}    ${BOLD}${CREAM}FilBucket${RESET}
-${BLUE}        │  ${CYAN}██${CREAM}ƒ${CYAN}█████${BLUE}   │${RESET}    ${DIM}Dropbox for Filecoin${RESET}
-${BLUE}        │  ${CYAN}████████${BLUE}   │${RESET}
-${BLUE}        │  ${CYAN}████████${BLUE}   │${RESET}    ${INK}Local installer · v0.1${RESET}
-${BLUE}        ╰─────┬─┬─────╯${RESET}
-${BLUE}              └─┘${RESET}
+${BLUE}         __________________${RESET}          ${BOLD}${CREAM}FilBucket${RESET}
+${BLUE}        (                  )${RESET}         ${DIM}Dropbox for Filecoin.${RESET}
+${BLUE}       ${CYAN}████████${CREAM} ƒ ${CYAN}████████${RESET}
+${BLUE}       ${CYAN}██████████████████${RESET}          ${INK}one‑line install • calibration${RESET}
+${BLUE}        ${CYAN}████████████████${RESET}
+${BLUE}         ${CYAN}██████████████${RESET}
+${BLUE}          ‾‾‾‾‾‾‾‾‾‾‾‾${RESET}
 
 EOF
 }
+
+# Pick a quirky storage quote for the install finale.
+filbucket_quote() {
+  local quotes=(
+    "Bits weigh less when somebody else holds them."
+    "A file saved is a future self thanking a past self."
+    "The only good hard drive is a proven one."
+    "Storage is free. Retrieval is character."
+    "Entropy is real; redundancy is polite."
+    "Every upload is a small act of faith."
+    "Filecoin never forgets. Don't test it."
+    "Durability is just thoughtfulness, at scale."
+    "One copy is a prayer. Two copies is a plan."
+    "The bucket is deep. The bucket is patient."
+    "Your files, kept safe in the background."
+    "Cryptographic proofs, warm like bread."
+    "Petabytes come and go. The hash remains."
+    "Treat storage like a library, not a landfill."
+    "Don't trust, verify. Then upload anyway."
+    "PDP: Please Don't Panic."
+    "The blockchain is the promise. The SP is the person."
+  )
+  # /dev/urandom + awk trick so bash versions without RANDOM behave
+  local n=${#quotes[@]}
+  local i=$(( $(od -An -N2 -tu2 /dev/urandom 2>/dev/null | tr -d ' ' || echo 0) % n ))
+  printf '%s' "${quotes[$i]}"
+}
+FB_QUOTE="$(filbucket_quote)"
+export FB_QUOTE
 
 step()  { printf "${BOLD}${BLUE}▸${RESET} %s\n" "$*"; }
 ok()    { printf "  ${GREEN}✓${RESET} ${DIM}%s${RESET}\n" "$*"; }
@@ -672,37 +701,44 @@ else
   ok "Dev user already configured"
 fi
 
-# ─── all done ────────────────────────────────────────────────────────────
+# ─── all done ──────────────────────────────────────────────────────────
 cat <<EOF
 
 ${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}
-${BOLD}${CREAM}  FilBucket is installed.${RESET}
+${BOLD}${CREAM}  Your bucket is ready.${RESET}  ${DIM}Go fill it up.${RESET}
 ${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}
 
-  Repo:    ${BOLD}$INSTALL_DIR${RESET}
-  Web:     ${BOLD}${BLUE}http://localhost:3010${RESET}
-  API:     ${BOLD}${BLUE}http://localhost:4000${RESET}
-  Console: ${BOLD}${BLUE}http://localhost:9001${RESET}  ${DIM}(minio, filbucket / filbucketsecret)${RESET}
+${BLUE}           _____________________${RESET}
+${BLUE}          (                     )${RESET}        ${DIM}${FB_QUOTE}${RESET}
+${BLUE}        ${CYAN}▓▓▓▓▓▓▓▓▓▓${CREAM} ƒ ${CYAN}▓▓▓▓▓▓▓▓▓▓${RESET}
+${BLUE}        ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
+${BLUE}         ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
+${BLUE}          ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
+${BLUE}           ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾${RESET}
 
-${BOLD}Next:${RESET}
-$(if [[ "${WALLET_READY:-0}" != "1" ]]; then cat <<NEXT
-  ${DIM}# One-time: fund the ops wallet + approve FWSS operator${RESET}
-  cd $INSTALL_DIR
-  pnpm --filter @filbucket/server setup-wallet
+  ${BOLD}Repo${RESET}     $INSTALL_DIR
+  ${BOLD}Web${RESET}      ${BLUE}http://localhost:3010${RESET}
+  ${BOLD}API${RESET}      ${BLUE}http://localhost:4000${RESET}
+  ${BOLD}Console${RESET}  ${BLUE}http://localhost:9001${RESET}  ${DIM}(minio · filbucket / filbucketsecret)${RESET}
 
-  ${DIM}# Then boot the stack${RESET}
-NEXT
-fi)
-  pnpm dev
+EOF
 
-${BOLD}Native Mac app:${RESET}
-  cd apps/mac && ./Scripts/compile_and_run.sh
+# Conditional "next steps" block — only shown if wallet isn't fully ready.
+if [[ "${WALLET_READY:-0}" != "1" ]]; then
+  cat <<EOF
+  ${BOLD}Next${RESET}
+  ${DIM}# fund the ops wallet + approve FWSS (one-time)${RESET}
+  cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet
 
-${DIM}Docs: https://docs.filbucket.ai${RESET}
+EOF
+fi
+
+cat <<EOF
+  ${BOLD}Boot${RESET}
+  cd $INSTALL_DIR && pnpm dev
+  ${DIM}# open http://localhost:3010${RESET}
+
 ${DIM}Source: https://github.com/Reiers/filbucket${RESET}
 
 EOF
 
-if ask "Launch \`pnpm dev\` now?" n; then
-  exec pnpm -C "$INSTALL_DIR" dev
-fi
