@@ -1,0 +1,43 @@
+{
+  "name": "@filbucket/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts & tsx watch src/worker.ts & wait",
+    "dev:api": "tsx watch src/index.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'server: no lint configured' && exit 0",
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/scripts/seed.ts",
+    "setup-wallet": "tsx src/scripts/setup-ops-wallet.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.662.0",
+    "@aws-sdk/s3-request-presigner": "3.662.0",
+    "@fastify/cors": "10.0.1",
+    "@filbucket/shared": "workspace:*",
+    "@filoz/synapse-sdk": "0.40.3",
+    "bullmq": "5.21.2",
+    "dotenv": "16.4.5",
+    "drizzle-orm": "0.36.0",
+    "fastify": "5.0.0",
+    "ioredis": "5.4.1",
+    "pg": "8.13.0",
+    "viem": "2.21.34",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "@types/pg": "8.11.10",
+    "drizzle-kit": "0.28.0",
+    "tsx": "4.19.1",
+    "typescript": "5.6.3"
+  }
+}
