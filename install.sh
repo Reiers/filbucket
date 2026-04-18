@@ -80,10 +80,10 @@ read_usdfc() {
   " "$1" 2>/dev/null )
 }
 
-# Poll for tFIL only (after the chainsafe faucet step).
+# Poll for tFIL only (after the faucet step). Optional 2nd arg overrides timeout.
 poll_tfil() {
   local addr="$1"
-  local timeout="${FILBUCKET_FAUCET_TIMEOUT:-600}"
+  local timeout="${2:-${FILBUCKET_FAUCET_TIMEOUT:-600}}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local start=$(date +%s)
   local i=0
@@ -111,10 +111,10 @@ poll_tfil() {
   done
 }
 
-# Poll for USDFC only (after the user mints via Trove).
+# Poll for USDFC only (after mint or faucet drip). Optional 2nd arg overrides timeout.
 poll_usdfc() {
   local addr="$1"
-  local timeout="${FILBUCKET_FAUCET_TIMEOUT:-900}"
+  local timeout="${2:-${FILBUCKET_FAUCET_TIMEOUT:-900}}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local start=$(date +%s)
   local i=0
@@ -501,38 +501,55 @@ else
       info "  2. cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
       info "  3. cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       info "  Address: ${BOLD}$OPS_ADDR${RESET}"
-    elif ask "Open faucet in browser and wait for tFIL funding?" y; then
-      # Put the address on the clipboard so the user only has to ⌘V it.
-      if command -v pbcopy >/dev/null 2>&1; then
-        printf '%s' "$OPS_ADDR" | pbcopy
-        ok "Address copied to clipboard."
-      fi
-      open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
-      info "  Browser opened. ⌘V to paste address → click Send Funds (100 tFIL)."
-      info "  Polling chain every 10s for tFIL. Ctrl-C to skip."
+    elif ask "Fund the wallet now?" y; then
       echo
-      if poll_tfil "$OPS_ADDR"; then
-        # USDFC: skip the chainsafe drip (dead) AND the manual Trove app
-        # (clunky). Mint programmatically via our own mint-usdfc script,
-        # which collateralizes ~150 tFIL and borrows 220 USDFC. Tested.
-        echo
-        step "Minting USDFC by collateralizing tFIL (Trove)"
-        info "  Deposits ~150 tFIL of collateral, borrows 220 USDFC. Takes ~90s."
-        echo
-        if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
-          ok "USDFC minted via Trove"
-          # Now run setup-wallet to deposit USDFC into Filecoin Pay + approve FWSS.
-          echo
-          step "Running setup-wallet (Filecoin Pay + FWSS approval)"
-          ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ) && \
-            ok "Ops wallet is approved + ready for uploads"
-          WALLET_READY=1
-        else
-          warn "USDFC mint failed. Check above. You can retry with:"
-          info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+      step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
+      FAUCET_URL="${FILBUCKET_FAUCET_URL:-https://filbucket-faucet.workers.dev}"
+      info "  Hitting $FAUCET_URL/drip…"
+      DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
+        -H 'content-type: application/json' \
+        -d "{\"address\":\"$OPS_ADDR\"}" 2>&1)"
+      DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
+      if [[ -n "$DRIP_OK" ]]; then
+        ok "Faucet drip sent. Both txs broadcast."
+        info "  Waiting for confirmation (calibration ~30-60s)…"
+        # Quick poll for both balances.
+        sleep 30
+        if poll_tfil "$OPS_ADDR" 60 && poll_usdfc "$OPS_ADDR" 60; then
+          ok "Wallet funded via FilBucket faucet."
         fi
       else
-        warn "tFIL polling cancelled."
+        warn "Faucet unavailable. Falling back to manual tFIL + Trove mint."
+        info "  Faucet response: $DRIP_RESP"
+        echo
+        if command -v pbcopy >/dev/null 2>&1; then
+          printf '%s' "$OPS_ADDR" | pbcopy
+          ok "Address copied to clipboard."
+        fi
+        open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
+        info "  Browser opened. ⌘V to paste address → click Send Funds (100 tFIL)."
+        info "  Polling chain every 10s for tFIL. Ctrl-C to skip."
+        echo
+        if poll_tfil "$OPS_ADDR"; then
+          echo
+          step "Minting USDFC by collateralizing tFIL (Trove fallback)"
+          info "  Deposits ~150 tFIL of collateral, borrows 220 USDFC. ~90s."
+          echo
+          if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
+            ok "USDFC minted via Trove"
+          else
+            warn "USDFC mint failed. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+          fi
+        else
+          warn "tFIL polling cancelled."
+        fi
+      fi
+      # Either path: try setup-wallet now if we have funds.
+      echo
+      step "Running setup-wallet (Filecoin Pay + FWSS approval)"
+      if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
+        ok "Ops wallet is approved + ready for uploads"
+        WALLET_READY=1
       fi
     else
       warn "Skipping. Fund + boot manually before first upload:"
