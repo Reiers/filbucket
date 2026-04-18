@@ -367,20 +367,20 @@ else
 
     ok "Wallet generated — address: ${BOLD}$OPS_ADDR${RESET}"
     echo
-    info "Both faucets need a one-time CAPTCHA solve. We can open them in your"
-    info "browser with the address pre-filled, then poll the chain until funded."
+    info "Faucets are rate-limited but normally hands-free in a real browser."
+    info "We'll open both, you paste ⌘V, click submit. Done."
     echo
     if ask "Open faucets in browser and wait for funding?" y; then
       # Put the address on the clipboard so the user only has to ⌘V it.
       if command -v pbcopy >/dev/null 2>&1; then
         printf '%s' "$OPS_ADDR" | pbcopy
-        ok "Address copied to clipboard — paste it into both faucets."
+        ok "Address copied to clipboard."
       fi
       open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
       sleep 2
       open "https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc" 2>/dev/null || true
-      info "  Browser opened. ⌘V to paste the address, solve the CAPTCHA, submit."
-      info "  Polling every 10s. Ctrl-C to skip and finish later."
+      info "  Two browser tabs opened. In each: ⌘V → click submit."
+      info "  Polling chain every 10s. Ctrl-C to skip and finish later."
       echo
       if poll_balances "$OPS_ADDR"; then
         # Wallet is funded — chain it into setup-wallet so the user can boot dev right away.
