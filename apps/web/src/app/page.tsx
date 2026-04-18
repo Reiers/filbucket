@@ -2,7 +2,7 @@
 
 import { type FileDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { completeUpload, initUpload, listFiles, putObject } from '../lib/api'
+import { completeUpload, deleteFile, initUpload, listFiles, putObject } from '../lib/api'
 import { DEFAULT_BUCKET_ID, DEV_USER_ID } from '../lib/env'
 import { FileDetailPanel } from '../components/FileDetailPanel'
 
@@ -234,7 +234,7 @@ export default function HomePage() {
               {files.map((f) => (
                 <li key={f.id}>
                   <div
-                    className={`grid w-full grid-cols-[1fr_80px_110px_72px_28px] items-center gap-3 px-3 py-1 text-[13px] transition-colors hover:bg-paper ${
+                    className={`group/row grid w-full grid-cols-[1fr_80px_110px_72px_28px] items-center gap-3 px-3 py-1 text-[13px] transition-colors hover:bg-paper ${
                       selectedId === f.id ? 'bg-accent-soft/50' : ''
                     }`}
                   >
@@ -256,22 +256,27 @@ export default function HomePage() {
                       {fmtRelative(f.createdAt)}
                     </span>
                     <span className="flex justify-end">
-                      {f.state === 'failed' && (
-                        <button
-                          type="button"
-                          title="Dismiss"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            // Phase 0: no delete endpoint yet. Open detail for error context.
-                            setSelectedId(f.id)
-                          }}
-                          className="rounded p-1 text-ink-mute hover:bg-err/10 hover:text-err"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                          </svg>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        title={f.state === 'failed' ? 'Dismiss failed upload' : 'Delete'}
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          const verb = f.state === 'failed' ? 'Dismiss this failed upload?' : `Delete “${f.name}”?`
+                          if (!window.confirm(verb)) return
+                          try {
+                            await deleteFile(f.id)
+                            if (selectedId === f.id) setSelectedId(null)
+                            await refresh()
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : String(err))
+                          }
+                        }}
+                        className="rounded p-1 text-ink-mute opacity-0 transition-opacity hover:bg-err/10 hover:text-err group-hover/row:opacity-100 focus:opacity-100"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+                        </svg>
+                      </button>
                     </span>
                   </div>
                 </li>

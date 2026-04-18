@@ -72,5 +72,18 @@ export async function completeUpload(fileId: string): Promise<FileDTO> {
 }
 
 export function downloadUrl(id: string): string {
-  return `${PUBLIC_API_URL}/api/files/${id}/download`
+  // Anchor-based downloads can't send custom headers — server accepts `?u=<devUserId>`
+  // as a Phase-0 fallback. Phase 1 swaps this for a short-lived signed token.
+  const u = encodeURIComponent(DEV_USER_ID)
+  return `${PUBLIC_API_URL}/api/files/${id}/download?u=${u}`
+}
+
+export async function deleteFile(id: string): Promise<void> {
+  const res = await fetch(`${PUBLIC_API_URL}/api/files/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`deleteFile failed: ${res.status}`)
+  }
 }

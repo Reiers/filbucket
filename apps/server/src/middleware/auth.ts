@@ -17,7 +17,13 @@ export function requireDevUser(req: FastifyRequest, reply: FastifyReply): string
     return null
   }
   const header = req.headers['x-dev-user']
-  const provided = Array.isArray(header) ? header[0] : header
+  const headerVal = Array.isArray(header) ? header[0] : header
+
+  // Accept `?u=<devUserId>` as a fallback for link-based flows (download anchors,
+  // share links in Phase 1, etc.) — still Phase-0 only.
+  const query = (req.query as { u?: string } | undefined)?.u
+
+  const provided = headerVal ?? query
   if (provided !== expected) {
     reply.code(401).send({ error: 'unauthorized', hint: 'Missing or bad X-Dev-User header' })
     return null

@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -48,6 +49,17 @@ export async function objectExists(key: string): Promise<{ exists: boolean; size
   } catch (err) {
     const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
     if (status === 404 || status === 403) return { exists: false, size: null }
+    throw err
+  }
+}
+
+export async function deleteObject(key: string): Promise<void> {
+  try {
+    await s3().send(new DeleteObjectCommand({ Bucket: s3Bucket(), Key: key }))
+  } catch (err) {
+    const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+    // 404 is fine — already gone.
+    if (status === 404) return
     throw err
   }
 }
