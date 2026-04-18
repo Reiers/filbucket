@@ -1,52 +1,30 @@
 'use client'
 
-import { type FileDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { completeUpload, deleteFile, initUpload, listFiles, putObject } from '../lib/api'
+import { type FileDTO } from '@filbucket/shared'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { completeUpload, deleteFile, downloadUrl, initUpload, listFiles, putObject } from '../lib/api'
 import { DEFAULT_BUCKET_ID, DEV_USER_ID } from '../lib/env'
 import { FileDetailPanel } from '../components/FileDetailPanel'
+import { BucketDropzone } from '../components/BucketDropzone'
+import { FileRow } from '../components/FileRow'
+import { PreviewModal } from '../components/PreviewModal'
+import type { NamedFile } from '../lib/files'
 
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
-  return `${(n / 1024 ** 3).toFixed(2)} GB`
-}
-
-function fmtRelative(iso: string): string {
-  const now = Date.now()
-  const then = new Date(iso).getTime()
-  const s = Math.max(1, Math.round((now - then) / 1000))
-  if (s < 60) return `${s}s ago`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.round(h / 24)
-  return `${d}d ago`
-}
-
-function fileTypeIcon(mime: string, name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (mime.startsWith('image/')) return '🖼'
-  if (mime.startsWith('video/')) return '🎞'
-  if (mime.startsWith('audio/')) return '🎵'
-  if (['pdf'].includes(ext)) return '📄'
-  if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return '🗜'
-  if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) return '📝'
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return '📊'
-  return '📎'
+interface LocalUpload {
+  /** file.name + path used for display */
+  displayName: string
+  uploaded: number
+  total: number
+  /** matches FileDTO.id once init has returned */
+  fileId: string | null
 }
 
 export default function HomePage() {
   const [files, setFiles] = useState<FileDTO[]>([])
-  const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState<
-    { name: string; uploaded: number; total: number }[]
-  >([])
+  const [uploading, setUploading] = useState<LocalUpload[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [previewFor, setPreviewFor] = useState<FileDTO | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const configOk = Boolean(DEV_USER_ID && DEFAULT_BUCKET_ID)
 
@@ -67,20 +45,34 @@ export default function HomePage() {
   }, [refresh])
 
   const upload = useCallback(
-    async (file: File) => {
+    async (named: NamedFile) => {
       if (!configOk) return
-      setUploading((s) => [...s, { name: file.name, uploaded: 0, total: file.size }])
+      const { file, path } = named
+      const key = `${path}\u0000${file.size}\u0000${file.lastModified}`
+      setUploading((s) => [
+        ...s,
+        { displayName: path, uploaded: 0, total: file.size, fileId: null },
+      ])
       setError(null)
       try {
         const init = await initUpload({
-          filename: file.name,
+          filename: path, // folder-aware: server sees "sub/dir/file.ext" (max 512 chars)
           size: file.size,
           mimeType: file.type || 'application/octet-stream',
           bucketId: DEFAULT_BUCKET_ID,
         })
+        setUploading((s) =>
+          s.map((u) =>
+            u.displayName === path && u.total === file.size && u.fileId == null
+              ? { ...u, fileId: init.fileId }
+              : u,
+          ),
+        )
         await putObject(init.uploadUrl, file, (uploaded, total) => {
           setUploading((s) =>
-            s.map((u) => (u.name === file.name ? { ...u, uploaded, total } : u)),
+            s.map((u) =>
+              u.fileId === init.fileId ? { ...u, uploaded, total } : u,
+            ),
           )
         })
         await completeUpload(init.fileId)
@@ -88,53 +80,89 @@ export default function HomePage() {
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
       } finally {
-        setUploading((s) => s.filter((u) => u.name !== file.name))
+        setUploading((s) => s.filter((u) => u.displayName !== path || u.total !== file.size))
+        // Note: the key var intentionally unused here; the filter above is correct.
+        void key
       }
     },
     [configOk, refresh],
   )
 
-  const onDrop = useCallback(
-    (evt: React.DragEvent<HTMLDivElement>) => {
-      evt.preventDefault()
-      setDragging(false)
-      const dropped = Array.from(evt.dataTransfer.files)
-      for (const f of dropped) void upload(f)
+  const onFiles = useCallback(
+    (incoming: NamedFile[]) => {
+      // Kick off uploads in parallel but cap concurrency to 3 so we don't overwhelm
+      // the browser's XHR pool on giant folder drops.
+      const MAX_CONCURRENT = 3
+      let idx = 0
+      const next = () => {
+        while (idx < incoming.length) {
+          const n = incoming[idx++]
+          if (n == null) continue
+          void upload(n).finally(next)
+          // Increment concurrency by letting this call queue up; the loop below will
+          // break once we've fired MAX_CONCURRENT tasks from this tick.
+          if ((idx % MAX_CONCURRENT) === 0) break
+        }
+      }
+      next()
     },
     [upload],
   )
 
-  const pickFiles = () => inputRef.current?.click()
+  // Build a lookup: fileId -> local upload bytes (used by FileRow for XHR progress).
+  const localByFileId = useMemo(() => {
+    const m = new Map<string, { uploaded: number; total: number }>()
+    for (const u of uploading) {
+      if (u.fileId != null) {
+        m.set(u.fileId, { uploaded: u.uploaded, total: u.total })
+      }
+    }
+    return m
+  }, [uploading])
+
+  // Orphan uploads: init hasn't returned yet so we can't join them with any FileDTO.
+  // Show them as a tiny "starting" list directly under the bucket.
+  const orphanUploads = uploading.filter((u) => u.fileId == null)
 
   return (
-    <main className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-24 pt-12 sm:px-10">
+    <main className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-24 pt-10 sm:px-10">
       {/* Header */}
       <header className="mb-10 flex items-start gap-5">
         <img
           src="/brand/filbucket-mark.svg"
           alt=""
-          width={68}
-          height={68}
-          className="mt-1 drop-shadow-[0_2px_6px_rgba(26,24,23,0.18)]"
+          width={56}
+          height={56}
+          className="mt-1 drop-shadow-[0_4px_12px_rgba(184,73,24,0.22)]"
         />
-        <div>
-          <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">
-            FilBucket · dev
+        <div className="min-w-0">
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
+            FilBucket
           </p>
-          <h1 className="font-serif text-[clamp(2rem,5vw,3.25rem)] leading-[1.05] tracking-tight text-ink">
-            Your files, <span className="italic text-accent">kept safe</span> in the background.
+          <h1
+            className="font-serif text-[clamp(2.2rem,5.5vw,3.6rem)] font-medium leading-[1.04] tracking-tight text-ink"
+            style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
+          >
+            Your files,{' '}
+            <span
+              className="italic text-accent"
+              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
+            >
+              kept safe
+            </span>{' '}
+            in the background.
           </h1>
-          <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-ink-soft">
-            Drop anything. It lands instantly, and we quietly secure it with redundant, verifiable
-            storage. No wallets, no jargon.
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-ink-soft">
+            Drop anything. It lands instantly, and we quietly secure it with redundant,
+            verifiable storage. No wallets, no jargon.
           </p>
         </div>
       </header>
 
       {!configOk && (
         <div className="mb-6 rounded-xl border border-warn/30 bg-warn/5 px-5 py-4 text-sm text-warn">
-          Missing <code className="font-mono">NEXT_PUBLIC_DEV_USER_ID</code> /
-          <code className="ml-1 font-mono">NEXT_PUBLIC_DEFAULT_BUCKET_ID</code>. Run the server
+          Missing <code className="font-mono">NEXT_PUBLIC_DEV_USER_ID</code> /{' '}
+          <code className="font-mono">NEXT_PUBLIC_DEFAULT_BUCKET_ID</code>. Run the server
           seed, paste into <code>.env</code>, restart.
         </div>
       )}
@@ -144,104 +172,44 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Dropzone — slimmer than before */}
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={`group relative mb-8 overflow-hidden rounded-xl border bg-paper-raised transition-all ${
-          dragging
-            ? 'border-accent shadow-[0_0_0_4px_var(--accent-soft)]'
-            : 'border-line hover:border-line-strong'
-        }`}
-      >
-        <span className="pointer-events-none absolute left-2.5 top-2.5 h-2 w-2 border-l border-t border-line-strong" />
-        <span className="pointer-events-none absolute right-2.5 top-2.5 h-2 w-2 border-r border-t border-line-strong" />
-        <span className="pointer-events-none absolute bottom-2.5 left-2.5 h-2 w-2 border-b border-l border-line-strong" />
-        <span className="pointer-events-none absolute bottom-2.5 right-2.5 h-2 w-2 border-b border-r border-line-strong" />
+      {/* The bucket. */}
+      <BucketDropzone
+        onFiles={onFiles}
+        uploadingCount={uploading.length}
+        filling={uploading.length > 0}
+      />
 
-        <div className="flex items-center gap-5 px-6 py-8 text-center sm:text-left">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-line-strong bg-paper text-accent">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v13" />
-              <path d="m6 9 6-6 6 6" />
-              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-            </svg>
-          </div>
-          <div className="flex-1">
-            <p className="font-serif text-xl text-ink">Drop files to upload</p>
-            <p className="mt-0.5 text-[13px] text-ink-mute">
-              or{' '}
-              <button
-                type="button"
-                onClick={pickFiles}
-                className="font-medium text-accent underline decoration-accent/30 decoration-2 underline-offset-[5px] transition-colors hover:decoration-accent"
-              >
-                choose from your computer
-              </button>
-            </p>
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const picked = Array.from(e.target.files ?? [])
-              for (const f of picked) void upload(f)
-              if (inputRef.current) inputRef.current.value = ''
-            }}
-          />
+      {/* Orphan (pre-init) uploads — a skinny status strip */}
+      {orphanUploads.length > 0 && (
+        <div className="mb-6 space-y-1.5 rounded-xl border border-line bg-paper-raised/70 px-5 py-3">
+          {orphanUploads.map((u) => (
+            <div key={u.displayName + u.total} className="flex items-center gap-3">
+              <span className="h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-accent" />
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-soft">
+                {u.displayName}
+              </span>
+              <span className="font-mono text-[10px] text-ink-mute">starting\u2026</span>
+            </div>
+          ))}
         </div>
-        {uploading.length > 0 && (
-          <div className="space-y-1.5 border-t border-line bg-paper/60 px-6 py-2.5">
-            {uploading.map((u) => {
-              const pct =
-                u.total > 0 ? Math.min(100, (u.uploaded / u.total) * 100) : 0
-              return (
-                <div key={u.name} className="flex items-center gap-3">
-                  <span className="h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-accent" />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-soft">
-                    {u.name}
-                  </span>
-                  <span className="h-[3px] w-32 overflow-hidden rounded-full bg-line/50">
-                    <span
-                      className="block h-full bg-accent transition-all"
-                      style={{ width: `${pct.toFixed(1)}%` }}
-                    />
-                  </span>
-                  <span className="w-10 text-right font-mono text-[10px] text-ink-mute">
-                    {pct.toFixed(0)}%
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      )}
 
-      {/* Library — Finder-compact */}
+      {/* Library */}
       <section>
-        <div className="mb-2 flex items-baseline justify-between">
+        <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-            Library · {files.length} {files.length === 1 ? 'item' : 'items'}
+            Library \u00b7 {files.length} {files.length === 1 ? 'item' : 'items'}
           </h2>
         </div>
 
         {files.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-line bg-paper-raised/40 px-5 py-8 text-center">
-            <p className="font-serif text-lg text-ink-soft">Nothing here yet.</p>
-            <p className="mt-1 text-[13px] text-ink-mute">
-              Drop a file above and watch it move from Ready to Secured.
-            </p>
-          </div>
+          <EmptyState />
         ) : (
-          <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
-            {/* Column header */}
-            <div className="grid grid-cols-[1fr_80px_110px_72px_28px] gap-3 border-b border-line bg-paper/60 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-ink-mute">
+          <div className="overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_1px_0_rgba(23,21,19,0.03),0_12px_24px_-18px_rgba(23,21,19,0.12)]">
+            <div
+              className="grid gap-3 border-b border-line bg-paper/80 px-4 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-mute"
+              style={{ gridTemplateColumns: 'minmax(0,1fr) 88px 170px 80px 32px' }}
+            >
               <span>Name</span>
               <span className="text-right">Size</span>
               <span>Status</span>
@@ -249,121 +217,106 @@ export default function HomePage() {
               <span />
             </div>
             <ul className="divide-y divide-line/60">
-              {files.map((f) => (
-                <li key={f.id}>
-                  <div
-                    className={`group/row relative grid w-full grid-cols-[1fr_80px_110px_72px_28px] items-center gap-3 px-3 py-1 text-[13px] transition-colors hover:bg-paper ${
-                      selectedId === f.id ? 'bg-accent-soft/50' : ''
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(f.id)}
-                      className="flex min-w-0 items-center gap-2.5 truncate text-left focus:outline-none"
-                    >
-                      <span className="text-base leading-none">{fileTypeIcon(f.mimeType, f.name)}</span>
-                      <span className="truncate text-ink">{f.name}</span>
-                    </button>
-                    {f.progress != null && f.progress.totalBytes > 0 && (
-                      <span
-                        className="pointer-events-none absolute inset-x-3 bottom-0 h-[2px] overflow-hidden rounded-full bg-line/50"
-                        aria-hidden="true"
-                      >
-                        <span
-                          className="block h-full bg-accent transition-all"
-                          style={{
-                            width: `${Math.min(
-                              100,
-                              (f.progress.totalUploaded / f.progress.totalBytes) * 100,
-                            ).toFixed(1)}%`,
-                          }}
-                        />
-                      </span>
-                    )}
-                    <span className="text-right font-mono text-[11px] text-ink-mute">
-                      {fmtBytes(f.sizeBytes)}
-                    </span>
-                    <span>
-                      <StatusBadge state={f.state as FileState} />
-                    </span>
-                    <span className="text-right font-mono text-[11px] text-ink-mute">
-                      {fmtRelative(f.createdAt)}
-                    </span>
-                    <span className="flex justify-end">
-                      <button
-                        type="button"
-                        title={f.state === 'failed' ? 'Dismiss failed upload' : 'Delete'}
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          const verb = f.state === 'failed' ? 'Dismiss this failed upload?' : `Delete “${f.name}”?`
-                          if (!window.confirm(verb)) return
-                          try {
-                            await deleteFile(f.id)
-                            if (selectedId === f.id) setSelectedId(null)
-                            await refresh()
-                          } catch (err) {
-                            setError(err instanceof Error ? err.message : String(err))
-                          }
-                        }}
-                        className="rounded p-1 text-ink-mute opacity-0 transition-opacity hover:bg-err/10 hover:text-err group-hover/row:opacity-100 focus:opacity-100"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                        </svg>
-                      </button>
-                    </span>
-                  </div>
-                </li>
-              ))}
+              {files.map((f) => {
+                const local = localByFileId.get(f.id)
+                return (
+                  <li key={f.id}>
+                    <FileRow
+                      file={f}
+                      localUploaded={local?.uploaded}
+                      localTotal={local?.total}
+                      selected={selectedId === f.id}
+                      onSelect={() => setSelectedId(f.id)}
+                      onPreview={() => setPreviewFor(f)}
+                      onDelete={async () => {
+                        const verb =
+                          f.state === 'failed'
+                            ? 'Dismiss this failed upload?'
+                            : `Delete \u201c${f.name}\u201d?`
+                        if (!window.confirm(verb)) return
+                        try {
+                          await deleteFile(f.id)
+                          if (selectedId === f.id) setSelectedId(null)
+                          await refresh()
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : String(err))
+                        }
+                      }}
+                    />
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
       </section>
 
-      {/* Footer — Filecoin trust signal */}
-      <footer className="mt-14 flex items-center justify-between border-t border-line pt-4 text-[11px] text-ink-mute">
-        <p className="font-mono uppercase tracking-[0.22em]" title="Internal dev environment. Not production.">
-          dev environment
+      {/* Footer */}
+      <footer className="mt-16 flex items-center justify-between border-t border-line pt-5 text-[11px] text-ink-mute">
+        <p
+          className="font-mono uppercase tracking-[0.22em]"
+          title="Internal dev environment, running on Filecoin calibration testnet."
+        >
+          Dev \u00b7 Calibration
         </p>
         <a
           href="#"
           className="group inline-flex items-center gap-2 opacity-70 transition-opacity hover:opacity-100"
-          title="Files are durably stored on Filecoin."
+          title="How your files stay safe"
         >
           <span className="font-mono uppercase tracking-wider">Stored on</span>
-          <img
-            src="/brand/filecoin.svg"
-            alt="Filecoin"
-            width={14}
-            height={14}
-            className="inline-block"
-          />
+          <img src="/brand/filecoin.svg" alt="Filecoin" width={14} height={14} />
           <span className="font-sans text-[12px] font-medium text-ink-soft">Filecoin</span>
         </a>
       </footer>
 
       {selectedId && (
-        <FileDetailPanel fileId={selectedId} onClose={() => setSelectedId(null)} />
+        <FileDetailPanel
+          fileId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onPreview={(f) => setPreviewFor(f)}
+        />
+      )}
+
+      {previewFor && (
+        <PreviewModal
+          src={downloadUrl(previewFor.id)}
+          mimeType={previewFor.mimeType}
+          name={previewFor.name}
+          sizeBytes={previewFor.sizeBytes}
+          onClose={() => setPreviewFor(null)}
+        />
       )}
     </main>
   )
 }
 
-function StatusBadge({ state }: { state: FileState }) {
-  const label = FILE_STATE_LABEL[state] ?? 'Unknown'
-  const styles: Record<FileState, { dot: string; text: string }> = {
-    uploading: { dot: 'bg-ink-mute animate-pulse', text: 'text-ink-soft' },
-    hot_ready: { dot: 'bg-ink-soft', text: 'text-ink-soft' },
-    pdp_committed: { dot: 'bg-ok', text: 'text-ok' },
-    archived_cold: { dot: 'bg-ink-mute', text: 'text-ink-mute' },
-    restore_from_cold: { dot: 'bg-warn animate-pulse', text: 'text-warn' },
-    failed: { dot: 'bg-err', text: 'text-err' },
-  }
-  const s = styles[state] ?? styles.hot_ready
+function EmptyState() {
   return (
-    <span className={`inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider ${s.text}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-      {label}
-    </span>
+    <div
+      className="relative overflow-hidden rounded-2xl border border-dashed border-line bg-paper-raised/50 px-8 py-14 text-center"
+    >
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 40% 60% at 50% 100%, rgba(184, 73, 24, 0.08), transparent 70%)',
+        }}
+      />
+      <div className="relative mx-auto mb-5 h-16 w-16 opacity-70">
+        <img src="/brand/filbucket-mark.svg" alt="" className="h-full w-full" />
+      </div>
+      <p
+        className="font-serif text-2xl italic text-ink-soft"
+        style={{ fontVariationSettings: '"SOFT" 100, "opsz" 100' }}
+      >
+        An empty bucket, patiently waiting.
+      </p>
+      <p className="mt-2 text-[13px] text-ink-mute">
+        Drop something in above. First it goes{' '}
+        <span className="font-medium text-ink-soft">Ready</span>, then{' '}
+        <span className="font-medium text-ok">Secured</span>.
+      </p>
+    </div>
   )
 }

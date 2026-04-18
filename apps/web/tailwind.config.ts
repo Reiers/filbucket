@@ -7,6 +7,7 @@ const config: Config = {
       colors: {
         paper: 'var(--paper)',
         'paper-raised': 'var(--paper-raised)',
+        'paper-sunken': 'var(--paper-sunken)',
         ink: 'var(--ink)',
         'ink-soft': 'var(--ink-soft)',
         'ink-mute': 'var(--ink-mute)',
@@ -14,9 +15,13 @@ const config: Config = {
         'line-strong': 'var(--line-strong)',
         accent: 'var(--accent)',
         'accent-soft': 'var(--accent-soft)',
+        'accent-deep': 'var(--accent-deep)',
+        medallion: 'var(--medallion)',
         ok: 'var(--ok)',
+        'ok-soft': 'var(--ok-soft)',
         warn: 'var(--warn)',
         err: 'var(--err)',
+        'err-soft': 'var(--err-soft)',
       },
       fontFamily: {
         sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],

@@ -119,14 +119,19 @@ export function ShareModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_12px_40px_rgba(26,24,23,0.18)]"
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_30px_80px_-20px_rgba(23,21,19,0.35)]"
       >
         <div className="flex items-start justify-between border-b border-line px-6 py-5">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
               Share
             </p>
-            <h2 className="mt-1 truncate font-serif text-2xl text-ink">{fileName}</h2>
+            <h2
+              className="mt-1 truncate font-serif text-2xl leading-tight text-ink"
+              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 110' }}
+            >
+              {fileName}
+            </h2>
           </div>
           <button
             onClick={onClose}

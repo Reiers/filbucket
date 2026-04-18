@@ -1,16 +1,21 @@
 'use client'
 
-import { type FileDetailDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
+import { type FileDetailDTO, type FileDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
 import { useEffect, useState } from 'react'
 import { downloadUrl, getFile } from '../lib/api'
 import { ShareModal } from './ShareModal'
+import { FilePreview } from './FilePreview'
+import { classifyPreview, fmtBytes } from '../lib/files'
 
 export function FileDetailPanel({
   fileId,
   onClose,
+  onPreview,
 }: {
   fileId: string
   onClose: () => void
+  /** Open the big preview modal from outside \u2014 optional. */
+  onPreview?: (f: FileDTO) => void
 }) {
   const [data, setData] = useState<FileDetailDTO | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -34,21 +39,31 @@ export function FileDetailPanel({
     }
   }, [fileId])
 
+  const canPreview =
+    data != null &&
+    (data.state === 'hot_ready' || data.state === 'pdp_committed') &&
+    classifyPreview(data.mimeType, data.name) !== 'none'
+
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-ink/20 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex justify-end bg-ink/25 backdrop-blur-sm"
       onClick={onClose}
     >
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="h-full w-full max-w-md overflow-y-auto border-l border-line bg-paper-raised shadow-[-12px_0_40px_rgba(26,24,23,0.08)]"
+        className="h-full w-full max-w-md overflow-y-auto border-l border-line bg-paper-raised shadow-[-20px_0_60px_rgba(23,21,19,0.12)]"
       >
         <div className="flex items-start justify-between border-b border-line px-6 py-5">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">
-              ▸ File
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
+              File
             </p>
-            <h2 className="mt-1 font-serif text-2xl text-ink">Details</h2>
+            <h2
+              className="mt-1 font-serif text-2xl leading-tight text-ink"
+              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 110' }}
+            >
+              Details
+            </h2>
           </div>
           <button
             onClick={onClose}
@@ -67,10 +82,36 @@ export function FileDetailPanel({
 
           {data && (
             <>
-              <div className="mb-8 break-all font-serif text-xl text-ink">{data.name}</div>
+              {canPreview && (
+                <div className="mb-6">
+                  <FilePreview
+                    src={downloadUrl(data.id)}
+                    mimeType={data.mimeType}
+                    name={data.name}
+                    sizeBytes={data.sizeBytes}
+                    maxHeight={260}
+                    rounded="0.85rem"
+                  />
+                  {onPreview && classifyPreview(data.mimeType, data.name) !== 'audio' && (
+                    <button
+                      type="button"
+                      onClick={() => onPreview({ ...data })}
+                      className="mt-2 font-mono text-[10px] uppercase tracking-wider text-ink-mute underline decoration-line-strong underline-offset-[3px] transition-colors hover:text-accent hover:decoration-accent"
+                    >
+                      Open full preview
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="mb-8 break-all font-serif text-xl leading-snug text-ink">
+                {data.name}
+              </div>
 
               <dl className="space-y-5 text-sm">
                 <Row label="Status" value={FILE_STATE_LABEL[data.state as FileState] ?? 'Unknown'} />
+                <Row label="Size" value={fmtBytes(data.sizeBytes)} />
+                <Row label="Type" value={data.mimeType || 'file'} />
                 <Row label="Uploaded" value={new Date(data.createdAt).toLocaleString()} />
                 <Row label="Updated" value={new Date(data.updatedAt).toLocaleString()} />
               </dl>
@@ -129,7 +170,7 @@ export function FileDetailPanel({
                             {p.pieceCid}
                             <span className="text-ink-mute">
                               {' '}
-                              · ds={p.datasetId ?? '-'} · sp={p.spProviderId ?? '-'}
+                              \u00b7 ds={p.datasetId ?? '-'} \u00b7 sp={p.spProviderId ?? '-'}
                             </span>
                           </li>
                         ))}
@@ -164,7 +205,7 @@ export function FileDetailPanel({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-6 border-b border-line/60 pb-4">
-      <dt className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">{label}</dt>
+      <dt className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">{label}</dt>
       <dd className="text-right text-ink">{value}</dd>
     </div>
   )

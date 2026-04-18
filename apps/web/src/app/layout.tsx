@@ -1,24 +1,30 @@
 import type { Metadata } from 'next'
-import { Instrument_Serif, JetBrains_Mono, Inter } from 'next/font/google'
+import { Fraunces, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google'
 import type { ReactNode } from 'react'
 import './globals.css'
 
-const serif = Instrument_Serif({
+// Display: Fraunces — a premium editorial variable serif with real personality.
+// The SOFT + opsz axes let us dial the hero line to feel almost hand-lettered.
+const serif = Fraunces({
   subsets: ['latin'],
-  weight: '400',
+  style: ['normal', 'italic'],
+  axes: ['SOFT', 'opsz'],
   variable: '--font-serif',
   display: 'swap',
 })
 
-const mono = JetBrains_Mono({
+// Body: Plus Jakarta Sans — humanist, friendly, not-Inter. Reads as premium
+// without leaning corporate.
+const sans = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  variable: '--font-mono',
+  variable: '--font-sans',
   display: 'swap',
 })
 
-const sans = Inter({
+// Mono stays JetBrains Mono — it's still the best free mono for UI numerics.
+const mono = JetBrains_Mono({
   subsets: ['latin'],
-  variable: '--font-sans',
+  variable: '--font-mono',
   display: 'swap',
 })
 

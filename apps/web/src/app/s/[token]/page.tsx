@@ -1,15 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SharePublicDTO } from '@filbucket/shared'
 import { PUBLIC_API_URL } from '../../../lib/env'
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
-  return `${(n / 1024 ** 3).toFixed(2)} GB`
-}
+import { FilePreview } from '../../../components/FilePreview'
+import { classifyPreview, fmtBytes } from '../../../lib/files'
 
 function fmtExpiry(iso: string | null): string | null {
   if (iso == null) return null
@@ -31,7 +26,6 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const [password, setPassword] = useState('')
   const [downloading, setDownloading] = useState(false)
 
-  // Unwrap the Promise-shaped params that Next.js 15 gives to client pages.
   useEffect(() => {
     let cancelled = false
     void params.then((p) => {
@@ -80,8 +74,6 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
     setDownloading(true)
     setError(null)
     try {
-      // If a password is required, probe the endpoint first to surface
-      // password errors cleanly instead of landing the user on a 401 page.
       if (share.hasPassword) {
         if (password.length === 0) {
           setError('Enter the password to download.')
@@ -108,7 +100,6 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
           return
         }
       }
-      // Hand off to the browser — 302 chain ends at MinIO which serves the bytes.
       const url = share.hasPassword
         ? `${PUBLIC_API_URL}/api/shares/${encodeURIComponent(token)}/download?p=${encodeURIComponent(password)}`
         : `${PUBLIC_API_URL}/api/shares/${encodeURIComponent(token)}/download`
@@ -119,119 +110,162 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
     }
   }, [token, share, password])
 
-  // ---- Render ---------------------------------------------------------------
+  const previewable = useMemo(() => {
+    if (share?.file == null) return false
+    if (share.hasPassword) return false // password unlocks download, keep preview gated
+    if (share.status !== 'active') return false
+    const kind = classifyPreview(share.file.mimeType, share.file.name)
+    return kind === 'image' || kind === 'video' || kind === 'audio' || kind === 'pdf'
+  }, [share])
+
+  const previewSrc =
+    token != null
+      ? `${PUBLIC_API_URL}/api/shares/${encodeURIComponent(token)}/download`
+      : ''
 
   return (
-    <main className="relative z-10 mx-auto w-full max-w-xl px-6 pt-20 pb-16">
-      <header className="mb-10 flex items-center gap-3">
+    <main className="relative z-10 mx-auto w-full max-w-2xl px-6 pt-16 pb-16 sm:pt-24">
+      {/* Soft gradient backdrop specific to share page */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 20% 0%, rgba(184, 73, 24, 0.10), transparent 60%), radial-gradient(ellipse 70% 50% at 90% 100%, rgba(11, 111, 192, 0.07), transparent 60%)',
+        }}
+      />
+
+      {/* Bucket watermark off to the side */}
+      <img
+        src="/brand/filbucket-mark.svg"
+        alt=""
+        aria-hidden
+        className="pointer-events-none fixed -right-12 bottom-6 z-0 h-[340px] w-[340px] opacity-[0.07] sm:-right-6 sm:bottom-12"
+      />
+
+      <header className="relative z-10 mb-10 flex items-center gap-3">
         <img
           src="/brand/filbucket-mark.svg"
           alt=""
           width={40}
           height={40}
-          className="drop-shadow-[0_2px_4px_rgba(26,24,23,0.15)]"
+          className="drop-shadow-[0_4px_10px_rgba(184,73,24,0.2)]"
         />
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
             Shared via FilBucket
           </p>
-          <p className="font-serif text-lg text-ink">A file is waiting for you.</p>
+          <p
+            className="font-serif text-lg text-ink"
+            style={{ fontVariationSettings: '"SOFT" 100, "opsz" 90' }}
+          >
+            A file is waiting for you.
+          </p>
         </div>
       </header>
 
       {loading && (
-        <div className="rounded-xl border border-line bg-paper-raised px-6 py-10 text-center text-sm text-ink-mute">
-          Loading…
+        <div className="relative z-10 rounded-2xl border border-line bg-paper-raised px-6 py-10 text-center text-sm text-ink-mute">
+          Loading\u2026
         </div>
       )}
 
       {error && !loading && (
-        <div className="mb-6 rounded-xl border border-err/30 bg-err/5 px-5 py-4 text-sm text-err">
+        <div className="relative z-10 mb-6 rounded-xl border border-err/30 bg-err/5 px-5 py-4 text-sm text-err">
           {error}
         </div>
       )}
 
-      {!loading && share != null && (
-        <section className="overflow-hidden rounded-2xl border border-line bg-paper-raised">
-          {/* File card */}
-          <div className="flex items-start gap-4 border-b border-line px-6 py-6">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-line-strong bg-paper text-ink-mute">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <path d="M14 2v6h6" />
-              </svg>
+      {!loading && share != null && share.file != null && (
+        <section className="relative z-10 overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_30px_60px_-30px_rgba(23,21,19,0.18)]">
+          {/* Preview band */}
+          {previewable && (
+            <div className="border-b border-line">
+              <FilePreview
+                src={previewSrc}
+                mimeType={share.file.mimeType}
+                name={share.file.name}
+                sizeBytes={share.file.sizeBytes}
+                maxHeight={460}
+                rounded="0"
+              />
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="break-all font-serif text-xl text-ink">
-                {share.file?.name ?? 'Unavailable'}
-              </p>
-              <p className="mt-1 font-mono text-[11px] text-ink-mute">
-                {share.file != null ? fmtBytes(share.file.sizeBytes) : '—'}
-                {share.expiresAt != null ? ` · ${fmtExpiry(share.expiresAt)}` : ''}
-                {share.maxDownloads != null
-                  ? ` · ${share.downloadCount}/${share.maxDownloads} downloads used`
-                  : ''}
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* Status / action */}
-          <div className="px-6 py-6">
-            {share.status === 'revoked' && (
-              <p className="text-sm text-err">This link has been revoked.</p>
-            )}
-            {share.status === 'expired' && (
-              <p className="text-sm text-err">This link has expired.</p>
-            )}
-            {share.status === 'exhausted' && (
-              <p className="text-sm text-err">
-                This link has reached its download limit.
-              </p>
-            )}
-            {share.status === 'active' && share.file != null && (
-              <>
-                {share.hasPassword && (
-                  <label className="mb-4 block">
-                    <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-                      Password
-                    </span>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void doDownload()
-                      }}
-                      placeholder="Enter to unlock"
-                      className="block w-full rounded-lg border border-line bg-paper px-3 py-2 font-sans text-[14px] text-ink focus:border-accent focus:outline-none"
-                    />
-                  </label>
-                )}
-                <button
-                  type="button"
-                  disabled={downloading}
-                  onClick={() => void doDownload()}
-                  className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-                >
-                  {downloading ? 'Starting download…' : 'Download'}
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3v14" />
-                    <path d="m6 11 6 6 6-6" />
-                    <path d="M4 21h16" />
-                  </svg>
-                </button>
-              </>
-            )}
+          {/* Filename + meta */}
+          <div className="px-7 py-7">
+            <h1
+              className="break-words font-serif text-[clamp(1.5rem,3.5vw,2.25rem)] leading-tight text-ink"
+              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 120' }}
+            >
+              {share.file.name}
+            </h1>
+            <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-ink-mute">
+              {fmtBytes(share.file.sizeBytes)}
+              {share.expiresAt != null ? ` \u00b7 ${fmtExpiry(share.expiresAt)}` : ''}
+              {share.maxDownloads != null
+                ? ` \u00b7 ${share.downloadCount}/${share.maxDownloads} downloads used`
+                : ''}
+            </p>
+
+            <div className="mt-6">
+              {share.status === 'revoked' && (
+                <p className="text-sm text-err">This link has been revoked.</p>
+              )}
+              {share.status === 'expired' && (
+                <p className="text-sm text-err">This link has expired.</p>
+              )}
+              {share.status === 'exhausted' && (
+                <p className="text-sm text-err">
+                  This link has reached its download limit.
+                </p>
+              )}
+
+              {share.status === 'active' && (
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                  {share.hasPassword && (
+                    <label className="block w-full sm:max-w-xs">
+                      <span className="mb-1 block font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
+                        Password
+                      </span>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void doDownload()
+                        }}
+                        placeholder="Enter to unlock"
+                        className="block w-full rounded-lg border border-line bg-paper px-3 py-2 text-[14px] text-ink focus:border-accent focus:outline-none"
+                      />
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    disabled={downloading}
+                    onClick={() => void doDownload()}
+                    className="inline-flex items-center gap-2 self-start rounded-full bg-ink px-6 py-3 text-sm font-medium text-paper transition-all hover:-translate-y-0.5 hover:bg-accent-deep disabled:opacity-60 sm:self-auto"
+                  >
+                    {downloading ? 'Starting download\u2026' : 'Download'}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 3v14" />
+                      <path d="m6 11 6 6 6-6" />
+                      <path d="M4 21h16" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </section>
       )}
 
-      <footer className="mt-12 flex items-center justify-between border-t border-line pt-4 text-[11px] text-ink-mute">
+      <footer className="relative z-10 mt-14 flex items-center justify-between border-t border-line pt-5 text-[11px] text-ink-mute">
         <a
           href="/"
-          className="font-mono uppercase tracking-[0.22em] hover:text-ink-soft"
+          className="font-mono uppercase tracking-[0.22em] transition-colors hover:text-ink-soft"
         >
-          ← filbucket
+          \u2190 filbucket
         </a>
         <span className="inline-flex items-center gap-2 opacity-70">
           <span className="font-mono uppercase tracking-wider">Stored on</span>
