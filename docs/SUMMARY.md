@@ -5,6 +5,7 @@
 ## Getting started
 
 * [Product overview](getting-started/overview.md)
+* [One-line installer](getting-started/installer.md)
 * [Quickstart (5 min)](getting-started/quickstart.md)
 * [Install the Mac app](getting-started/install-mac.md)
 * [Pricing & plans](getting-started/pricing.md)

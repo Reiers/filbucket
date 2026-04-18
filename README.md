@@ -66,7 +66,31 @@ Most Filecoin products expose the plumbing. FilBucket wins by doing the opposite
 
 ## Quickstart
 
-### Prerequisites
+### One-line installer (macOS)
+
+```bash
+curl -fsSL https://get.filbucket.ai | bash
+```
+
+Sets up Postgres + Redis + MinIO via Homebrew, clones the repo into `~/FilBucket`, generates an ops wallet, runs migrations, and tells you how to fund the wallet + boot the stack. Safe by default, idempotent, `FILBUCKET_YES=1` for non-interactive.
+
+<details>
+<summary>What the installer does</summary>
+
+1. Checks Homebrew, Node 22+, pnpm, git, librsvg.
+2. `brew install postgresql@16 redis minio minio-mc` (skips what's already there).
+3. `brew services start` each.
+4. Creates Postgres role + db + MinIO bucket.
+5. Clones `github.com/Reiers/filbucket` into `~/FilBucket`.
+6. `pnpm install`.
+7. Offers to generate a fresh calibration wallet + writes `.env`.
+8. Runs Drizzle migrations + seed.
+9. Prints faucet links + the exact `setup-wallet` + `pnpm dev` commands.
+
+No `sudo`. No silent writes outside `~/FilBucket`, `~/.filbucket/`, and Homebrew's own prefix.
+</details>
+
+### Prerequisites (if you'd rather go manual)
 
 - **Node 22+** and **pnpm 10**
 - **Postgres 16**, **Redis 7**, **MinIO** (via Homebrew on macOS, or Docker elsewhere)
