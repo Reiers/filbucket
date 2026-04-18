@@ -734,11 +734,55 @@ EOF
 fi
 
 cat <<EOF
-  ${BOLD}Boot${RESET}
-  cd $INSTALL_DIR && pnpm dev
-  ${DIM}# open http://localhost:3010${RESET}
+  ${DIM}Source: https://github.com/Reiers/filbucket${RESET}
 
-${DIM}Source: https://github.com/Reiers/filbucket${RESET}
+EOF
+
+# ─── auto-boot dev stack ───────────────────────────────────────────
+LOG_DIR="$HOME/.filbucket"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/dev.log"
+PID_FILE="$LOG_DIR/dev.pid"
+
+# If an old dev run is already alive, leave it alone.
+if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+  ok "Dev stack already running (PID $(cat "$PID_FILE"))"
+else
+  step "Starting the dev stack in the background"
+  # macOS bash 3 is strict about backgrounded nohup via subshell + redirection;
+  # use setsid-equivalent via 'nohup … &' then 'disown'.
+  (
+    cd "$INSTALL_DIR"
+    nohup pnpm dev > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    disown $!
+  )
+  ok "Launched (log: $LOG_FILE)"
+  info "  Waiting for web :3010 to respond…"
+  READY=0
+  for i in {1..60}; do
+    if curl -sf http://localhost:3010 >/dev/null 2>&1; then READY=1; break; fi
+    sleep 1
+  done
+  if [[ "$READY" == "1" ]]; then
+    ok "Web is up at ${BLUE}http://localhost:3010${RESET}"
+    # Open the browser tab automatically on macOS.
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      open http://localhost:3010 2>/dev/null || true
+    fi
+  else
+    warn "Web didn't respond in 60s. Check $LOG_FILE."
+    info "  Or start it yourself: cd $INSTALL_DIR && pnpm dev"
+  fi
+fi
+
+cat <<EOF
+
+${DIM}──────────────────────────────────────────────────────${RESET}
+  ${BOLD}Controls${RESET}
+  ${DIM}· Stop:     kill \$(cat $PID_FILE)${RESET}
+  ${DIM}· Logs:     tail -f $LOG_FILE${RESET}
+  ${DIM}· Restart:  kill \$(cat $PID_FILE); cd $INSTALL_DIR && pnpm dev${RESET}
 
 EOF
 
