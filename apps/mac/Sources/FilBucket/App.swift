@@ -8,7 +8,6 @@ struct FilBucketApp: App {
     @StateObject private var health = HealthMonitor()
 
     init() {
-        // Configure singletons that the env objects need.
         APIClient.shared.applySettings(AppSettings.snapshot())
     }
 
@@ -19,7 +18,7 @@ struct FilBucketApp: App {
                 .environmentObject(library)
                 .environmentObject(uploader)
                 .environmentObject(health)
-                .frame(minWidth: 980, minHeight: 620)
+                .frame(minWidth: 1000, minHeight: 660)
                 .onAppear {
                     APIClient.shared.applySettings(settings.snapshot())
                     library.start(settings: settings)
@@ -40,23 +39,66 @@ struct FilBucketApp: App {
                 }
         }
         .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            CommandGroup(replacing: .newItem) {}
-            CommandMenu("FilBucket") {
-                Button("Refresh Library") { NotificationCenter.default.post(name: .fbRefresh, object: nil) }
-                    .keyboardShortcut("r")
+            // Replace the default New menu with FilBucket-appropriate items.
+            CommandGroup(replacing: .newItem) {
+                Button("Upload Files…") {
+                    NotificationCenter.default.post(name: .fbPickFiles, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                Button("Upload Folder…") {
+                    NotificationCenter.default.post(name: .fbPickFolder, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+
+            CommandMenu("File") {
+                Button("Refresh Library") {
+                    NotificationCenter.default.post(name: .fbRefresh, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Divider()
+
+                Button("Share Selected File…") {
+                    NotificationCenter.default.post(name: .fbShareSelected, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Button("Reveal in Finder") {
+                    NotificationCenter.default.post(name: .fbRevealSelected, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(after: .help) {
+                Divider()
+                Button("FilBucket Documentation") {
+                    if let url = URL(string: "https://docs.filbucket.ai") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                Button("Source on GitHub") {
+                    if let url = URL(string: "https://github.com/Reiers/filbucket") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
         }
 
         Settings {
             SettingsView()
                 .environmentObject(settings)
-                .frame(width: 480)
+                .frame(width: 520)
         }
     }
 }
 
 extension Notification.Name {
-    static let fbRefresh = Notification.Name("fb.refresh")
+    static let fbRefresh        = Notification.Name("fb.refresh")
+    static let fbPickFiles      = Notification.Name("fb.pick.files")
+    static let fbPickFolder     = Notification.Name("fb.pick.folder")
+    static let fbShareSelected  = Notification.Name("fb.share.selected")
+    static let fbRevealSelected = Notification.Name("fb.reveal.selected")
 }

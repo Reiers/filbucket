@@ -108,6 +108,41 @@ body::after {
 .bucket-medallion-shimmer { animation: bucket-shimmer 4s ease-in-out infinite; }
 .bucket-lid-float { animation: bucket-lid-float 2.6s ease-in-out infinite; transform-origin: 52% 60%; }
 
+/* New bucket keyframes: body-level breathing + sway, shadow breathing,
+   droplets falling into the bucket, liquid surface wobble. */
+@keyframes bucket-body-breathe {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50%      { transform: translate3d(0, -1.5px, 0) scale(1.006); }
+}
+
+@keyframes bucket-body-sway {
+  0%,  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25%       { transform: translate3d(-1.2px, -0.4px, 0) rotate(-0.6deg); }
+  75%       { transform: translate3d(1.2px, -0.4px, 0) rotate(0.6deg); }
+}
+
+@keyframes shadow-breathe {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
+  50%      { transform: translateX(-50%) scale(1.08); opacity: 0.85; }
+}
+
+@keyframes droplet-fall {
+  0%   { transform: translateY(0) scale(0.9); opacity: 0; }
+  15%  { opacity: 1; }
+  85%  { transform: translateY(70px) scale(1); opacity: 1; }
+  100% { transform: translateY(82px) scale(0.6); opacity: 0; }
+}
+
+@keyframes bucket-liquid-wobble {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(1.5px); }
+}
+
+.bucket-body-breathe { animation: bucket-body-breathe 5.5s ease-in-out infinite; transform-origin: 50% 90%; }
+.bucket-body-sway { animation: bucket-body-sway 2.8s ease-in-out infinite; transform-origin: 50% 100%; }
+.bucket-liquid-wobble { animation: bucket-liquid-wobble 1.2s ease-in-out infinite; }
+
+
 .indeterminate-bar::after {
   content: '';
   position: absolute;

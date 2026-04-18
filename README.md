@@ -53,7 +53,7 @@ Most Filecoin products expose the plumbing. FilBucket wins by doing the opposite
     </tr>
     <tr>
       <td><img src="design-previews/02-library-mixed.png" alt="Library" /><br/><sub><b>Library</b> — live progress bars, real state transitions, inline image thumbnails.</sub></td>
-      <td><img src="apps/mac/design-previews/desktop.png" alt="macOS app" /><br/><sub><b>Native macOS app</b> — SwiftUI, AVKit + PDFKit previews, drag-drop for files and folders.</sub></td>
+      <td><img src="apps/mac/design-previews/window.png" alt="macOS app" /><br/><sub><b>Native macOS app</b> — SwiftUI, AVKit + PDFKit previews, drag-drop for files and folders.</sub></td>
     </tr>
     <tr>
       <td><img src="design-previews/07-preview-image.png" alt="Preview" /><br/><sub><b>Inline previews</b> — images, video (with scrubbing), audio, PDF, text.</sub></td>

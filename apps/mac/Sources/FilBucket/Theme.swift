@@ -14,6 +14,8 @@ enum FBColor {
     static let ok           = Color(red: 0.247, green: 0.420, blue: 0.227)   // #3f6b3a
     static let warn         = Color(red: 0.647, green: 0.447, blue: 0.043)   // #a5720b
     static let err          = Color(red: 0.635, green: 0.227, blue: 0.165)   // #a23a2a
+    static let medallion    = Color(red: 0.043, green: 0.435, blue: 0.753)   // #0b6fc0 Filecoin-blue echo
+    static let medallionSoft = Color(red: 0.660, green: 0.820, blue: 1.000)  // #a8d2ff
 }
 
 enum FBFont {

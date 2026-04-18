@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { completeUpload, deleteFile, downloadUrl, initUpload, listFiles, putObject } from '../lib/api'
 import { DEFAULT_BUCKET_ID, DEV_USER_ID } from '../lib/env'
 import { FileDetailPanel } from '../components/FileDetailPanel'
-import { BucketDropzone } from '../components/BucketDropzone'
+import { BucketDropzone, type InFlightUpload } from '../components/BucketDropzone'
 import { FileRow } from '../components/FileRow'
 import { PreviewModal } from '../components/PreviewModal'
 import type { NamedFile } from '../lib/files'
@@ -120,9 +120,36 @@ export default function HomePage() {
     return m
   }, [uploading])
 
-  // Orphan uploads: init hasn't returned yet so we can't join them with any FileDTO.
-  // Show them as a tiny "starting" list directly under the bucket.
-  const orphanUploads = uploading.filter((u) => u.fileId == null)
+  // Feed the bucket dropzone a unified in-flight list. Combines:
+  //  - local XHR uploads from `uploading` state (phase 'starting' or 'xhr')
+  //  - server-side chunking from /api/files `progress` field (phase 'server')
+  const bucketUploads: InFlightUpload[] = useMemo(() => {
+    const out: InFlightUpload[] = []
+    // First, anything the browser is actively PUT-ing to MinIO.
+    const localFileIds = new Set<string>()
+    for (const u of uploading) {
+      if (u.fileId != null) localFileIds.add(u.fileId)
+      out.push({
+        displayName: u.displayName,
+        uploaded: u.uploaded,
+        total: u.total,
+        phase: u.fileId == null ? 'starting' : u.uploaded < u.total ? 'xhr' : 'server',
+      })
+    }
+    // Then server-side chunking for files that have progress but no local xhr.
+    for (const f of files) {
+      if (localFileIds.has(f.id)) continue
+      if (f.state === 'hot_ready' && f.progress != null && f.progress.totalBytes > 0 && f.progress.totalUploaded < f.progress.totalBytes) {
+        out.push({
+          displayName: f.name,
+          uploaded: f.progress.totalUploaded,
+          total: f.progress.totalBytes,
+          phase: 'server',
+        })
+      }
+    }
+    return out
+  }, [uploading, files])
 
   return (
     <main className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-24 pt-10 sm:px-10">
@@ -172,27 +199,8 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* The bucket. */}
-      <BucketDropzone
-        onFiles={onFiles}
-        uploadingCount={uploading.length}
-        filling={uploading.length > 0}
-      />
-
-      {/* Orphan (pre-init) uploads — a skinny status strip */}
-      {orphanUploads.length > 0 && (
-        <div className="mb-6 space-y-1.5 rounded-xl border border-line bg-paper-raised/70 px-5 py-3">
-          {orphanUploads.map((u) => (
-            <div key={u.displayName + u.total} className="flex items-center gap-3">
-              <span className="h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-accent" />
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-soft">
-                {u.displayName}
-              </span>
-              <span className="font-mono text-[10px] text-ink-mute">starting…</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* The bucket — now carries its own progress tray. */}
+      <BucketDropzone onFiles={onFiles} uploads={bucketUploads} />
 
       {/* Library */}
       <section>

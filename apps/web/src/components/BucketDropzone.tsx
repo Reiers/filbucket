@@ -1,46 +1,50 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { namedFilesFromDrop, namedFilesFromFileList, type NamedFile } from '../lib/files'
 
 type BucketState = 'idle' | 'drag' | 'filling'
 
+export interface InFlightUpload {
+  /** Human-displayable filename (with path). */
+  displayName: string
+  uploaded: number
+  total: number
+  /** 'xhr' = browser→MinIO; 'server' = server→SP chunking; 'starting' = pre-init */
+  phase: 'starting' | 'xhr' | 'server'
+}
+
 /**
- * Interactive bucket dropzone.
+ * Interactive bucket dropzone with real progress visualization.
  *
  * States:
- *  - idle:    bucket breathes calmly, italic 'f' glyph shimmers softly
- *  - drag:    the lid lifts off and floats, the mouth opens wide
- *  - filling: active uploads in progress; shows soft ripples
- *
- * `dragenter` / `dragleave` / `drop` listen on the whole window so a user can
- * drop anywhere on the page; we surface the bucket visual whenever files are
- * being dragged in.
+ *  - idle:    bucket breathes calmly, handle rests, mouth closed.
+ *  - drag:    lid lifts + tilts, mouth opens, glow beneath the rim.
+ *  - filling: mouth stays partially open, internal liquid level rises with
+ *             average upload progress, soft wobble on the body, droplets fall.
  */
 export function BucketDropzone({
   onFiles,
-  uploadingCount,
-  filling,
+  uploads,
 }: {
   onFiles: (files: NamedFile[]) => void
-  uploadingCount: number
-  filling: boolean
+  /** Per-file progress tracked by the parent. Empty = idle/drag-only. */
+  uploads: InFlightUpload[]
 }) {
-  const [state, setState] = useState<BucketState>('idle')
+  const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
-
-  // Window-level drag tracking. Drag events fire on descendants too, so count refs.
   const dragDepthRef = useRef(0)
 
-  // Dev-only: allow forcing a visual state via URL hash, so we can snap
-  // design screenshots of the drag/filling lid-open state without manually
-  // dragging. `#debug-drag` / `#debug-fill` toggle the corresponding state.
+  // Dev-only state override via hash.
+  const [debugState, setDebugState] = useState<BucketState | null>(null)
   useEffect(() => {
     if (typeof window === 'undefined') return
     const sync = () => {
-      if (window.location.hash === '#debug-drag') setState('drag')
-      else if (window.location.hash === '#debug-fill') setState('filling')
+      const h = window.location.hash
+      if (h === '#debug-drag') setDebugState('drag')
+      else if (h === '#debug-fill') setDebugState('filling')
+      else setDebugState(null)
     }
     sync()
     window.addEventListener('hashchange', sync)
@@ -52,7 +56,7 @@ export function BucketDropzone({
       if (!hasFiles(e.dataTransfer)) return
       dragDepthRef.current += 1
       e.preventDefault()
-      setState((s) => (s === 'filling' ? s : 'drag'))
+      setDragOver(true)
     }
     const onDragOver = (e: DragEvent) => {
       if (!hasFiles(e.dataTransfer)) return
@@ -61,21 +65,18 @@ export function BucketDropzone({
     }
     const onDragLeave = () => {
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
-      if (dragDepthRef.current === 0) {
-        setState(filling ? 'filling' : 'idle')
-      }
+      if (dragDepthRef.current === 0) setDragOver(false)
     }
     const onDrop = async (e: DragEvent) => {
       if (!hasFiles(e.dataTransfer)) return
       e.preventDefault()
       dragDepthRef.current = 0
-      setState('filling')
+      setDragOver(false)
       const dt = e.dataTransfer
       if (dt == null) return
       const files = await namedFilesFromDrop(dt)
       if (files.length > 0) onFiles(files)
     }
-
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)
     window.addEventListener('dragleave', onDragLeave)
@@ -86,57 +87,76 @@ export function BucketDropzone({
       window.removeEventListener('dragleave', onDragLeave)
       window.removeEventListener('drop', onDrop)
     }
-  }, [filling, onFiles])
+  }, [onFiles])
 
-  // Sync visual "filling" state whenever the prop changes (unless user is dragging).
-  useEffect(() => {
-    setState((s) => {
-      if (s === 'drag') return s
-      return filling ? 'filling' : 'idle'
-    })
-  }, [filling])
+  // Derive bucket state.
+  const actual: BucketState = dragOver
+    ? 'drag'
+    : uploads.length > 0
+      ? 'filling'
+      : 'idle'
+  const state: BucketState = debugState ?? actual
+
+  // Average progress across all uploads (weighted by total bytes).
+  const overall = useMemo(() => {
+    if (uploads.length === 0) return { pct: 0, totalBytes: 0, totalUploaded: 0 }
+    let u = 0
+    let t = 0
+    for (const up of uploads) {
+      u += up.uploaded
+      t += up.total
+    }
+    return {
+      pct: t > 0 ? Math.min(100, (u / t) * 100) : 0,
+      totalBytes: t,
+      totalUploaded: u,
+    }
+  }, [uploads])
 
   const pickFiles = () => fileInputRef.current?.click()
   const pickFolder = () => folderInputRef.current?.click()
 
   const prompt =
     state === 'drag'
-      ? "Let go, we've got it."
+      ? "Let go — we've got it."
       : state === 'filling'
-        ? uploadingCount > 0
-          ? `Filling up… ${uploadingCount} file${uploadingCount === 1 ? '' : 's'} in flight`
-          : 'Filling up…'
+        ? uploads.length === 1
+          ? 'Catching your file…'
+          : `Catching ${uploads.length} files…`
         : 'Drop files in the bucket'
 
   const sub =
     state === 'drag'
-      ? 'Folders welcome. Anything under a gig, really.'
+      ? 'Folders welcome. Anything, really.'
       : state === 'filling'
-        ? 'Hold tight, these land in hot cache first.'
+        ? `${fmtBytesShort(overall.totalUploaded)} of ${fmtBytesShort(overall.totalBytes)} landed.`
         : 'Or pick from your computer. Folders keep their shape.'
 
   return (
     <section
       aria-label="Upload bucket"
-      className="relative isolate mb-10 overflow-hidden rounded-3xl border border-line bg-paper-raised"
+      className={`relative isolate mb-10 overflow-hidden rounded-3xl border bg-paper-raised transition-colors ${
+        state === 'drag' ? 'border-medallion/60 shadow-[0_0_0_6px_rgba(60,167,255,0.12)]' : 'border-line'
+      }`}
     >
-      {/* Soft warm halo so the bucket feels lit */}
+      {/* Ambient lighting: warm accent from below, blue from above, amplified during drag */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 transition-opacity duration-500"
         style={{
+          opacity: state === 'idle' ? 0.6 : 1,
           background:
-            'radial-gradient(ellipse 60% 80% at 50% 120%, rgba(11, 111, 192, 0.10), transparent 60%), radial-gradient(ellipse 50% 55% at 50% -10%, rgba(184, 73, 24, 0.08), transparent 60%)',
+            'radial-gradient(ellipse 65% 85% at 50% 118%, rgba(11, 111, 192, 0.14), transparent 60%), radial-gradient(ellipse 55% 60% at 50% -8%, rgba(184, 73, 24, 0.08), transparent 60%)',
         }}
       />
-      {/* Dashed corner marks \u2014 editorial detail */}
+      {/* Editorial corner marks */}
       <span className="pointer-events-none absolute left-3 top-3 h-2.5 w-2.5 border-l border-t border-line-strong" />
       <span className="pointer-events-none absolute right-3 top-3 h-2.5 w-2.5 border-r border-t border-line-strong" />
       <span className="pointer-events-none absolute bottom-3 left-3 h-2.5 w-2.5 border-b border-l border-line-strong" />
       <span className="pointer-events-none absolute bottom-3 right-3 h-2.5 w-2.5 border-b border-r border-line-strong" />
 
-      <div className="relative z-10 flex flex-col items-center gap-6 px-6 py-12 sm:px-10 sm:py-16">
-        <BucketArt state={state} uploadingCount={uploadingCount} />
+      <div className="relative z-10 flex flex-col items-center gap-6 px-6 pt-12 pb-8 sm:px-10 sm:pt-16">
+        <BucketArt state={state} fillPct={overall.pct} fileCount={uploads.length} />
 
         <div className="text-center">
           <p
@@ -174,7 +194,30 @@ export function BucketDropzone({
         </div>
       </div>
 
-      {/* Hidden inputs */}
+      {/* In-flight progress tray (real bars). Folded into the dropzone so the
+          progress lives visually "with" the bucket, not elsewhere on the page. */}
+      {uploads.length > 0 && (
+        <div className="relative z-10 border-t border-line bg-paper/70 backdrop-blur-sm">
+          {/* Overall bar */}
+          <div className="relative h-[3px] w-full overflow-hidden bg-line/60">
+            <span
+              className="block h-full bg-medallion transition-all duration-300 ease-out"
+              style={{ width: `${overall.pct.toFixed(1)}%` }}
+            />
+          </div>
+          <ul className="max-h-[180px] divide-y divide-line/60 overflow-y-auto px-5 py-2">
+            {uploads.slice(0, 10).map((u, i) => (
+              <ProgressRow key={`${u.displayName}-${i}`} upload={u} />
+            ))}
+            {uploads.length > 10 && (
+              <li className="px-0 py-1.5 text-center font-mono text-[10px] text-ink-mute">
+                + {uploads.length - 10} more…
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -204,6 +247,42 @@ export function BucketDropzone({
   )
 }
 
+function ProgressRow({ upload }: { upload: InFlightUpload }) {
+  const pct = upload.total > 0 ? Math.min(100, (upload.uploaded / upload.total) * 100) : 0
+  const phaseLabel =
+    upload.phase === 'starting' ? 'starting…' : upload.phase === 'xhr' ? 'uploading' : 'securing'
+  const phaseColor =
+    upload.phase === 'starting'
+      ? 'bg-ink-mute'
+      : upload.phase === 'xhr'
+        ? 'bg-medallion'
+        : 'bg-accent'
+  return (
+    <li className="flex items-center gap-3 py-1.5">
+      <span className={`h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full ${phaseColor}`} />
+      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-soft">
+        {upload.displayName}
+      </span>
+      <span className="relative h-[3px] w-40 overflow-hidden rounded-full bg-line/60">
+        {upload.phase === 'starting' ? (
+          <span className="indeterminate-bar absolute inset-0 text-ink-mute" />
+        ) : (
+          <span
+            className={`block h-full transition-all duration-300 ease-out ${phaseColor}`}
+            style={{ width: `${pct.toFixed(1)}%` }}
+          />
+        )}
+      </span>
+      <span className="w-10 text-right font-mono text-[10px] text-ink-mute tabular-nums">
+        {upload.phase === 'starting' ? '—' : `${Math.round(pct)}%`}
+      </span>
+      <span className="w-14 text-right font-mono text-[10px] text-ink-mute/80">
+        {phaseLabel}
+      </span>
+    </li>
+  )
+}
+
 function hasFiles(dt: DataTransfer | null): boolean {
   if (dt == null) return false
   const types = dt.types
@@ -214,31 +293,55 @@ function hasFiles(dt: DataTransfer | null): boolean {
   return false
 }
 
+function fmtBytesShort(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
+  return `${(n / 1024 ** 3).toFixed(2)} GB`
+}
+
 /* --------------------------------------------------------------------------
  * The bucket illustration.
  *
- * A bigger, richly-styled version of /brand/filbucket-mark.svg:
- *  - Filecoin-blue silhouette (same gradient as the brand mark)
- *  - detachable lid that lifts off in "drag" state
- *  - italic 'f' glyph in negative space, same geometry as the mark
- *  - soft cast shadow, ambient glow, optional splash particles on drag
+ * Built to match /brand/filbucket-mark.svg precisely:
+ *  - Filecoin-blue gradient body
+ *  - Bail handle
+ *  - Dark ellipse for the mouth (revealed when lid tilts)
+ *  - REAL Filecoin 'f' glyph on the front (verbatim path from filecoin.svg)
+ *
+ * State transitions:
+ *  - idle → drag:    lid tilts open 22°, translates up+left, mouth exposed,
+ *                    blue inner glow, droplet particles above the rim.
+ *  - drag → filling: lid rests slightly ajar, bucket gains a subtle sway,
+ *                    internal fill level rises with `fillPct`, droplets fall.
  * ------------------------------------------------------------------------ */
 
 function BucketArt({
   state,
-  uploadingCount,
+  fillPct,
+  fileCount,
 }: {
   state: BucketState
-  uploadingCount: number
+  fillPct: number
+  fileCount: number
 }) {
-  const lidOpen = state === 'drag'
-  const isIdle = state === 'idle'
-  const isFilling = state === 'filling'
+  const isDrag = state === 'drag'
+  const isFill = state === 'filling'
+
+  // Lid transform — eased tilt during drag, slight ajar while filling.
+  const lidTransform = isDrag
+    ? 'translate(-50%, -28px) rotate(-18deg)'
+    : isFill
+      ? 'translate(-50%, -8px) rotate(-6deg)'
+      : 'translate(-50%, 0px) rotate(0deg)'
+
+  // Body wobble classes.
+  const bodyClass = isFill ? 'bucket-body-sway' : state === 'idle' ? 'bucket-body-breathe' : ''
 
   return (
     <div
       className="relative"
-      style={{ width: 240, height: 220 }}
+      style={{ width: 240, height: 240 }}
       aria-hidden
     >
       {/* Cast shadow */}
@@ -246,39 +349,78 @@ function BucketArt({
         className="absolute left-1/2 -translate-x-1/2 transition-all duration-500"
         style={{
           bottom: 2,
-          width: lidOpen ? 190 : 170,
+          width: isDrag ? 200 : 170,
           height: 16,
           borderRadius: '50%',
           background:
             'radial-gradient(ellipse at center, rgba(11, 21, 40, 0.32) 0%, rgba(11, 21, 40, 0.08) 55%, transparent 75%)',
           filter: 'blur(2px)',
+          animation: isFill ? 'shadow-breathe 2.4s ease-in-out infinite' : undefined,
         }}
       />
 
-      {/* Ambient blue glow in the mouth when dragging */}
-      {lidOpen && (
+      {/* Ambient cyan glow in the mouth when exposed */}
+      {(isDrag || isFill) && (
         <div
-          className="absolute left-1/2 top-[38%] -translate-x-1/2 translate-y-[-50%] opacity-80"
+          className="absolute left-1/2 top-[30%] -translate-x-1/2 transition-opacity duration-300"
           style={{
-            width: 170,
-            height: 44,
+            width: 180,
+            height: 54,
             background:
-              'radial-gradient(ellipse at center, rgba(60, 167, 255, 0.45) 0%, transparent 70%)',
-            filter: 'blur(8px)',
+              'radial-gradient(ellipse at center, rgba(60, 167, 255, 0.5) 0%, transparent 70%)',
+            filter: 'blur(10px)',
+            opacity: isDrag ? 0.9 : 0.55,
           }}
         />
       )}
 
+      {/* Drop particles coming down while filling */}
+      {isFill && fileCount > 0 && (
+        <>
+          {[0, 1, 2].map((i) => (
+            <span
+              key={`drop-${i}`}
+              className="absolute block rounded-full bg-medallion/80"
+              style={{
+                left: `${44 + i * 6}%`,
+                top: -10,
+                width: 5,
+                height: 5,
+                animation: `droplet-fall 1.6s ${i * 0.3}s ease-in infinite`,
+              }}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Splash rising on initial drag */}
+      {isDrag && (
+        <>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span
+              key={`splash-${i}`}
+              className="absolute block rounded-full"
+              style={{
+                left: `${38 + i * 6}%`,
+                top: 40 + (i % 2) * 8,
+                width: 5 + (i % 2),
+                height: 5 + (i % 2),
+                background: i % 2 === 0 ? 'var(--accent)' : '#3ca7ff',
+                opacity: 0.82,
+                animation: `splash-rise 1.4s ${i * 0.15}s ease-out infinite`,
+              }}
+            />
+          ))}
+        </>
+      )}
+
       {/* The lid */}
       <div
-        className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 ease-out ${
-          lidOpen ? 'bucket-lid-float' : ''
-        }`}
+        className="absolute left-1/2 transition-transform duration-500 ease-out will-change-transform"
         style={{
-          top: lidOpen ? 2 : 48,
-          transform: lidOpen
-            ? 'translateX(-50%) translate(-6px, -18px) rotate(-14deg)'
-            : 'translateX(-50%) rotate(0deg)',
+          top: 30,
+          transform: lidTransform,
+          transformOrigin: '80% 50%',
           width: 168,
           height: 26,
           pointerEvents: 'none',
@@ -291,54 +433,37 @@ function BucketArt({
               <stop offset="100%" stopColor="#0072e5" />
             </linearGradient>
           </defs>
-          {/* Top ellipse */}
           <ellipse cx="84" cy="10" rx="80" ry="7" fill="url(#lid-grad)" />
-          {/* Side wall */}
           <path
             d="M4 10 L 4 15 Q 4 22 12 23 L 156 23 Q 164 22 164 15 L 164 10 Z"
             fill="url(#lid-grad)"
           />
-          {/* Cyan highlight */}
           <ellipse cx="84" cy="6" rx="66" ry="2.2" fill="#a8daff" opacity="0.65" />
-          {/* Knob */}
           <ellipse cx="84" cy="3.2" rx="9" ry="2.4" fill="#0a1020" />
         </svg>
       </div>
 
-      {/* Splash particles on drag */}
-      {lidOpen && (
-        <>
-          {[0, 1, 2, 3].map((i) => (
-            <span
-              key={i}
-              className="absolute rounded-full"
-              style={{
-                left: `${42 + i * 9}%`,
-                top: 12 + (i % 2) * 10,
-                width: 5 + (i % 2),
-                height: 5 + (i % 2),
-                background: i % 2 === 0 ? 'var(--accent)' : '#3ca7ff',
-                opacity: 0.8,
-                animation: `splash-rise 1.4s ${i * 0.2}s ease-out infinite`,
-              }}
-            />
-          ))}
-        </>
-      )}
-
       {/* The bucket body */}
       <svg
-        viewBox="0 0 240 220"
+        viewBox="0 0 240 240"
         width="240"
-        height="220"
-        className={isIdle ? 'bucket-idle' : ''}
-        style={{ position: 'absolute', inset: 0 }}
+        height="240"
+        className={bodyClass}
+        style={{ position: 'absolute', inset: 0, willChange: 'transform' }}
       >
         <defs>
           <linearGradient id="body-grad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#3ca7ff" />
             <stop offset="100%" stopColor="#0072e5" />
           </linearGradient>
+          <linearGradient id="fill-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#ffffff" stopOpacity="0.08" />
+          </linearGradient>
+          {/* Clip to bucket interior so the fill liquid stays inside */}
+          <clipPath id="bucket-inner">
+            <path d="M44 70 H 196 L 186 208 Q 184 212 180 212 H 60 Q 56 212 54 208 Z" />
+          </clipPath>
         </defs>
 
         {/* Bail handle */}
@@ -350,19 +475,43 @@ function BucketArt({
           strokeLinecap="round"
         />
 
-        {/* Bucket body \u2014 tapered silhouette, matches brand mark */}
+        {/* Bucket body */}
         <path
           d="M36 66 H 204 L 190 204 Q 188 210 182 210 H 58 Q 52 210 50 204 Z"
           fill="url(#body-grad)"
         />
 
-        {/* Mouth ellipse (dark void) — only drawn when lid is lifted, so the
-            closed state has a smoothly-covered top without dark edge bleed. */}
-        {lidOpen && (
+        {/* Internal liquid level (only shown while filling) */}
+        {isFill && (
+          <g clipPath="url(#bucket-inner)">
+            {/* Liquid surface — rises from bottom based on fillPct */}
+            <rect
+              x="0"
+              y={70 + (148 * (100 - Math.max(5, fillPct))) / 100}
+              width="240"
+              height="250"
+              fill="url(#fill-grad)"
+              className="bucket-liquid-wobble"
+            />
+            {/* Surface highlight line */}
+            <line
+              x1="44"
+              y1={70 + (148 * (100 - Math.max(5, fillPct))) / 100 + 1}
+              x2="196"
+              y2={70 + (148 * (100 - Math.max(5, fillPct))) / 100 + 1}
+              stroke="#a8daff"
+              strokeWidth="1.5"
+              opacity="0.7"
+            />
+          </g>
+        )}
+
+        {/* Mouth ellipse, only drawn when lid is lifted so the idle state
+            reads as a clean sealed bucket. */}
+        {(isDrag || isFill) && (
           <>
             <ellipse cx="120" cy="66" rx="84" ry="11" fill="#0a1020" />
             <ellipse cx="120" cy="68" rx="74" ry="6.5" fill="#000" opacity="0.45" />
-            {/* Cyan rim highlight only visible when mouth is exposed */}
             <path
               d="M38 64 Q 120 52, 202 64"
               fill="none"
@@ -373,45 +522,21 @@ function BucketArt({
           </>
         )}
 
-        {/* Italic 'f' glyph in negative space \u2014 same geometry as brand mark,
-            scaled up. Built from top-bar + descender + crossbar. */}
+        {/* REAL Filecoin 'f' glyph extracted from filecoin.svg — not a redraw.
+            Original glyph lives at viewBox 0..40 starting around x=10,y=6.
+            We translate+scale it so it sits centered on the bucket face. */}
         <g
-          transform="translate(130 140)"
+          transform="translate(80 110) scale(2.1)"
           fill="#fbf9f4"
-          className={isIdle ? 'bucket-medallion-shimmer' : ''}
+          className={state === 'idle' ? 'bucket-medallion-shimmer' : ''}
         >
-          {/* Top bar */}
-          <path d="M -10 -30 C 0 -30 10 -24 12 -14 L 26 -14 L 24 -6 L 10 -6 C 8 -14 3 -17 -4 -17 L -10 -17 Z" />
-          {/* Vertical descender with curved tail */}
-          <path d="M -10 -17 L -26 40 C -27 46 -32 50 -37 50 L -45 50 L -45 41 L -40 41 C -38 41 -37 40 -36 37 L -18 -17 Z" />
-          {/* Crossbar \u2014 load-bearing, thick enough to read at any size */}
-          <path d="M -24 2 L 16 2 L 13 12 L -27 12 Z" />
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M21.9 17.6l-.6 3.2 5.7.8-.4 1.5-5.6-.8c-.4 1.3-.6 2.7-1.1 3.9-.5 1.4-1 2.8-1.6 4.1-.8 1.7-2.2 2.9-4.1 3.2-1.1.2-2.3.1-3.2-.6-.3-.2-.6-.6-.6-.9 0-.4.2-.9.5-1.1.2-.1.7 0 1 .1.3.3.6.7.8 1.1.6.8 1.4.9 2.2.3.9-.8 1.4-1.9 1.7-3 .6-2.4 1.2-4.7 1.7-7.1v-.4l-5.3-.8.2-1.5 5.5.8.7-3.1-5.7-.9.2-1.6 5.9.8c.2-.6.3-1.1.5-1.6.5-1.8 1-3.6 2.2-5.2 1.2-1.6 2.6-2.6 4.7-2.5.9 0 1.8.3 2.4 1 .1.1.3.3.3.5 0 .4 0 .9-.3 1.2-.4.3-.9.2-1.3-.2-.3-.3-.5-.6-.8-.9-.6-.8-1.5-.9-2.2-.2-.5.5-1 1.2-1.3 1.9-.7 2.1-1.2 4.3-1.9 6.5l5.5.8-.4 1.5-5.3-.8"
+          />
         </g>
       </svg>
-
-      {/* Filling ripples over the bucket mouth */}
-      {isFilling && uploadingCount > 0 && (
-        <>
-          <span
-            className="ping-soft absolute rounded-full border-2 border-accent/70"
-            style={{ left: '50%', top: '30%', width: 28, height: 28, marginLeft: -14, marginTop: -14 }}
-          />
-          <span
-            className="ping-soft absolute rounded-full border-2"
-            style={{
-              left: '50%',
-              top: '30%',
-              width: 28,
-              height: 28,
-              marginLeft: -14,
-              marginTop: -14,
-              animationDelay: '0.4s',
-              borderColor: '#3ca7ff',
-              opacity: 0.7,
-            }}
-          />
-        </>
-      )}
     </div>
   )
 }

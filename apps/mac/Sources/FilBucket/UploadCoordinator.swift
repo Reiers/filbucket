@@ -34,13 +34,28 @@ final class UploadCoordinator: NSObject, ObservableObject {
         Task { await ingest(urls: urls) }
     }
 
-    /// Programmatic open-file dialog entry.
+    /// Programmatic open-file dialog entry (files only).
     func openPickerAndUpload() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = true
+        panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.title = "Upload to FilBucket"
+        panel.title = "Upload Files to FilBucket"
+        panel.prompt = "Upload"
+        if panel.runModal() == .OK {
+            handleDrop(urls: panel.urls)
+        }
+    }
+
+    /// Folder-only picker. Walks recursively in expand().
+    func openFolderPickerAndUpload() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.title = "Upload Folder to FilBucket"
+        panel.message = "Folder structure will be preserved."
+        panel.prompt = "Upload"
         if panel.runModal() == .OK {
             handleDrop(urls: panel.urls)
         }

@@ -21,47 +21,51 @@ struct DetailPane: View {
     }
 }
 
-// MARK: - Hero / dropzone landing pane
+// MARK: - Hero / no-selection landing pane (HIG-compliant: minimal, system-flavored)
 
 struct Hero: View {
     @EnvironmentObject var uploader: UploadCoordinator
-    @EnvironmentObject var health: HealthMonitor
+    @EnvironmentObject var library: FileLibrary
 
     var body: some View {
-        VStack(spacing: 22) {
+        VStack(spacing: 16) {
             Spacer()
-            VStack(spacing: 8) {
-                Text("Files that stay put.")
-                    .font(FBFont.serif(34, weight: .semibold))
+
+            Image("BrandMark")
+                .resizable()
+                .frame(width: 56, height: 56)
+                .opacity(0.85)
+
+            VStack(spacing: 4) {
+                Text(library.files.isEmpty ? "No files yet" : "No file selected")
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(FBColor.ink)
-                Text("Drag anything in. We secure it. You stop worrying.")
-                    .font(FBFont.sans(14))
+                Text(library.files.isEmpty
+                     ? "Drag files anywhere on the window, or use ⌘O."
+                     : "Pick a file from the sidebar to see it here.")
+                    .font(.system(size: 12))
                     .foregroundStyle(FBColor.inkSoft)
+                    .multilineTextAlignment(.center)
             }
 
-            DropZoneCard()
-                .frame(maxWidth: 540)
-
-            HStack(spacing: 6) {
-                Image(systemName: health.isReachable ? "circle.fill" : "exclamationmark.circle.fill")
-                    .foregroundStyle(health.isReachable ? FBColor.ok : FBColor.err)
-                    .font(.system(size: 8))
-                Text(health.isReachable ? "Connected" : "Offline")
-                    .font(FBFont.sans(11))
-                    .foregroundStyle(FBColor.inkMute)
-                if let chain = health.chain {
-                    Text("· \(chain)")
-                        .font(FBFont.sans(11))
-                        .foregroundStyle(FBColor.inkMute)
-                }
+            HStack(spacing: 8) {
+                Button("Upload Files…") { uploader.openPickerAndUpload() }
+                    .keyboardShortcut("o", modifiers: .command)
+                    .controlSize(.regular)
+                Button("Upload Folder…") { uploader.openFolderPickerAndUpload() }
+                    .controlSize(.regular)
             }
+            .padding(.top, 4)
+
             Spacer()
         }
-        .padding(.horizontal, 40)
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 struct DropZoneCard: View {
+    // Kept for backward compatibility; not used in new Hero. Will remove in a follow-up.
     @EnvironmentObject var uploader: UploadCoordinator
     var body: some View {
         Button {
@@ -72,10 +76,10 @@ struct DropZoneCard: View {
                     .font(.system(size: 30))
                     .foregroundStyle(FBColor.accent)
                 Text("Choose files or drop them anywhere")
-                    .font(FBFont.serif(16, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundStyle(FBColor.ink)
                 Text("Folders preserve their structure")
-                    .font(FBFont.sans(12))
+                    .font(.system(size: 12))
                     .foregroundStyle(FBColor.inkMute)
             }
             .frame(maxWidth: .infinity)
