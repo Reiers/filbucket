@@ -504,7 +504,7 @@ else
     elif ask "Fund the wallet now?" y; then
       echo
       step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
-      FAUCET_URL="${FILBUCKET_FAUCET_URL:-https://filbucket-faucet.workers.dev}"
+      FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
       info "  Hitting $FAUCET_URL/drip…"
       DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
         -H 'content-type: application/json' \
