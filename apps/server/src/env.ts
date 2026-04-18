@@ -26,7 +26,12 @@ const schema = z.object({
 
   SERVER_PORT: z.coerce.number().int().default(4000),
   WEB_PORT: z.coerce.number().int().default(3000),
-  DEV_USER_ID: z.string().uuid().optional(),
+  // Allow empty string for DEV_USER_ID; the seed script fills it in.
+  DEV_USER_ID: z
+    .string()
+    .optional()
+    .transform((v) => (v == null || v === '' ? undefined : v))
+    .pipe(z.string().uuid().optional()),
   PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
 })
 

@@ -473,14 +473,38 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         EX_FIL_HUMAN="${EX_FIL%.*}"
       fi
 
-      # If we have tFIL but no USDFC, mint via Trove.
+      # If we have tFIL but no USDFC, try the FilBucket faucet first (cheap,
+      # no collateral lock). Only fall back to the Trove mint if the faucet
+      # rejects (already used, dry, etc.).
       if [[ "$EX_FIL_HUMAN" != "0" ]] && [[ "$EX_USDFC_HUMAN" == "0" ]]; then
         echo
-        step "Minting USDFC via Trove (collateralizes ~150 tFIL)"
-        if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
-          ok "USDFC minted"
+        step "Trying FilBucket faucet for the USDFC top-up"
+        FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
+        DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
+          -H 'content-type: application/json' \
+          -d "{\"address\":\"$EXISTING_ADDR\"}" 2>&1)"
+        DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
+        if [[ -n "$DRIP_OK" ]]; then
+          ok "Faucet drip sent. Waiting for USDFC to land…"
+          sleep 30
+          poll_usdfc "$EXISTING_ADDR" 60 || true
         else
-          warn "USDFC mint failed. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+          warn "Faucet declined: $DRIP_RESP"
+          # Fall back to Trove mint — needs ~200 tFIL of collateral, so check first.
+          EX_FIL="$(read_fil "$EXISTING_ADDR")"
+          EX_FIL_INT="${EX_FIL%.*}"
+          if [[ "${EX_FIL_INT:-0}" -lt 200 ]]; then
+            warn "Need at least 200 tFIL to mint USDFC via Trove (you have $EX_FIL_INT)."
+            info "  Get more tFIL from https://faucet.calibnet.chainsafe-fil.io/funds.html and re-run."
+          else
+            echo
+            step "Minting USDFC via Trove (collateralizes ~150 tFIL)"
+            if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
+              ok "USDFC minted"
+            else
+              warn "USDFC mint failed. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+            fi
+          fi
         fi
       fi
 
