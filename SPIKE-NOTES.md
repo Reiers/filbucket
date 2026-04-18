@@ -148,3 +148,86 @@ worker has. Path B replaces that with:
   Should become "retry just the missing chunks" in Phase 1.
 - Aggregation for < 1 MiB files into shared CAR bundles — separate from Path B.
 
+
+---
+
+## macOS app — `apps/mac/` (Phase 0)
+
+Native SwiftUI client. SwiftPM only (no Xcode project). Talks to the same
+backend the web app uses. Lives at `apps/mac/`.
+
+### What works
+
+- `swift build` clean. `swift test` passes (4 smoke tests).
+- `Scripts/package_app.sh` produces `FilBucket.app` (arm64, macOS 14+,
+  bundle id `ai.filbucket.desktop`, adhoc-signed by default).
+- `Scripts/build_icon.sh` converts `apps/web/public/brand/filbucket-mark.svg`
+  → `Icon.icns` via `rsvg-convert + sips + iconutil`.
+- App launches, window opens, shows the FilBucket sidebar library + hero
+  dropzone, polls `/api/files` every 3 s, displays the same human state
+  badges as the web (Uploading / Ready / Secured / Archived / Restoring /
+  Failed).
+- Drag-and-drop for files + folders (recursive walk, paths preserved as
+  `folder/sub/file.ext` in the upload filename).
+- Real progress bars on uploads (URLSession `didSendBodyData` → live bytes).
+- Inline previews: image (NSImage), video/audio (AVKit), PDF (PDFKit), text.
+- Share-link sheet: expiry presets (1h/24h/7d/30d/never), optional
+  password (≥4 chars), max-downloads cap. URL is copied to clipboard on
+  create.
+- Settings panel (`⌘,`) for server URL / dev user ID / default bucket ID,
+  persisted in `UserDefaults`.
+- Offline banner driven by `/healthz` polling every 5 s.
+- Brand match: warm-paper background (`#f7f4ee`), burnt-sienna accent
+  (`#b54a17`), serif headings, geometric sans body, `.regularMaterial`
+  on sidebar + toolbar.
+
+### LOC
+
+- Swift sources: 1,865 lines across 13 `Sources/` files + 1 test file.
+- Total inc. scripts + README + Package.swift: ~2,500.
+
+### Run / build
+
+```
+cd apps/mac
+brew install librsvg              # one-time, for the icon pipeline only
+Scripts/build_icon.sh             # generates Icon.icns from brand SVG
+swift test                        # 4 smoke tests, ~0.01s
+Scripts/compile_and_run.sh        # kill, package, launch
+```
+
+### What's stubbed / known limitations
+
+- **Adhoc signature** — packaged app is signed with `-` not a real cert.
+  `setup_dev_signing.sh` creates a self-signed cert in the login keychain
+  but it has to be manually trusted in Keychain Access ("Always Trust →
+  Code Signing") before `codesign` will pick it up. Once trusted, set
+  `APP_IDENTITY="FilBucket Development"` and re-run `package_app.sh`.
+  Without that, the app launches fine via `open` (verified) but
+  `spctl --assess` rejects it — that's expected for adhoc signatures.
+- **No magic-link auth.** Dev `X-Dev-User` header only. Settings panel
+  exposes the dev user ID for switching identities locally. Real auth is
+  Phase 2.
+- **No Sparkle auto-update.** Phase 2.
+- **No notarization.** Phase 2.
+- **No menu-bar / status-item mode.** Main window only — by design.
+- **Folder uploads** join the relative path with `/` into the filename.
+  Server stores it verbatim. If/when the server adds a real `path` field
+  on `/api/uploads/init`, the mac client should be updated to send it
+  separately so the web sidebar can render folder hierarchy properly.
+- **Error reporting** is minimal — failures show in the in-flight row's
+  status label and a `print(...)` to stderr. No global toast/error sink yet.
+
+### Top 3 followups
+
+1. **Real Developer ID + notarization** so the app launches cleanly when
+   downloaded from a release page (and `spctl --assess` is happy).
+   `Scripts/sign-and-notarize.sh` is already wired up; just needs an Apple
+   Developer account and `notarytool` profile.
+2. **Magic-link auth flow** so the app can run against a non-dev user.
+   Should mirror whatever the web lands; in the meantime the dev header
+   path is the same as the web's.
+3. **Surface upload errors visibly.** Today a failed upload sticks in the
+   in-flight section but there's no banner / toast / modal. A small global
+   error sink + a "Retry" button on the failed row would close the loop.
+

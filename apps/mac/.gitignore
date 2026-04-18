@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+Package.resolved
+FilBucket.app/
+Icon.icns
+Sources/FilBucket/Resources/Icon.icns
+*.xcodeproj/

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Outgoing network requests to the local FilBucket server. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Read user-selected files on drag-and-drop. We are intentionally
+         NOT sandboxed for Phase 0 since we need broad file access; this is
+         declared here for clarity once sandboxing is enabled in Phase 2. -->
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+</dict>
+</plist>
