@@ -21,7 +21,7 @@
  * wallet with an active Trove will revert (use addColl/withdrawDebt instead).
  */
 
-import 'dotenv/config'
+import '../load-env.js'
 import {
   type Address,
   createPublicClient,

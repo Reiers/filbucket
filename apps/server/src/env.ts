@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './load-env.js'
 import { z } from 'zod'
 
 // Re-export a carefully validated env object. Never log this.
