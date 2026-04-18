@@ -55,6 +55,68 @@ ask()   {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
+# Poll calibration balances for an address until both tFIL > 0 and USDFC > 0.
+# Uses the project's own viem from apps/server's node_modules so we don't
+# drag in a separate dep. Times out after 10 minutes by default.
+poll_balances() {
+  local addr="$1"
+  local timeout="${FILBUCKET_FAUCET_TIMEOUT:-600}"
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+  local start=$(date +%s)
+  local i=0 fil_done=0 usdfc_done=0 fil_str='—' usdfc_str='—'
+  trap 'printf "\n"; return 130' INT
+  while true; do
+    local now=$(date +%s)
+    local elapsed=$((now - start))
+    if (( elapsed > timeout )); then
+      printf "\n"
+      warn "Timed out after ${timeout}s. Fund manually and re-run setup-wallet."
+      return 1
+    fi
+    # Read balances every 10s, animate spinner every 100ms in between.
+    if (( elapsed % 10 == 0 )) || (( i == 0 )); then
+      local out
+      out=$( cd "$INSTALL_DIR/apps/server" && node -e "
+        const { createPublicClient, http, formatEther, formatUnits } = require('viem');
+        const { filecoinCalibration } = require('viem/chains');
+        const c = createPublicClient({ chain: filecoinCalibration, transport: http('https://api.calibration.node.glif.io/rpc/v1') });
+        const USDFC = '0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0';
+        Promise.all([
+          c.getBalance({ address: process.argv[1] }),
+          c.readContract({ address: USDFC, abi: [{ name:'balanceOf', type:'function', stateMutability:'view', inputs:[{name:'a',type:'address'}], outputs:[{type:'uint256'}] }], functionName:'balanceOf', args:[process.argv[1]] })
+        ]).then(([f,u]) => console.log(formatEther(f) + '|' + formatUnits(u, 18))).catch(() => console.log('0|0'));
+      " "$addr" 2>/dev/null )
+      fil_str="${out%|*}"
+      usdfc_str="${out#*|}"
+      # Trim to 4 decimals.
+      fil_str="${fil_str%.*}.${fil_str#*.}"
+      [[ "$fil_str" =~ ^[0-9]+\.[0-9]{0,4} ]] && fil_str="${BASH_REMATCH[0]}"
+      [[ "$usdfc_str" =~ ^[0-9]+\.[0-9]{0,4} ]] && usdfc_str="${BASH_REMATCH[0]}"
+      # Strip trailing zeros after the decimal
+      fil_str=$(printf '%s' "$fil_str" | sed -E 's/0+$//; s/\.$//')
+      usdfc_str=$(printf '%s' "$usdfc_str" | sed -E 's/0+$//; s/\.$//')
+      [[ -z "$fil_str" ]] && fil_str="0"
+      [[ -z "$usdfc_str" ]] && usdfc_str="0"
+      # Done?
+      [[ "$fil_str" != "0" ]] && fil_done=1
+      [[ "$usdfc_str" != "0" ]] && usdfc_done=1
+    fi
+    local fil_mark="${RED}·${RESET}"; local usdfc_mark="${RED}·${RESET}"
+    (( fil_done == 1 )) && fil_mark="${GREEN}✓${RESET}"
+    (( usdfc_done == 1 )) && usdfc_mark="${GREEN}✓${RESET}"
+    printf "\r  ${BLUE}%s${RESET} waiting on chain  ${fil_mark} tFIL ${BOLD}%s${RESET}  ${usdfc_mark} USDFC ${BOLD}%s${RESET}  ${DIM}(%ss)${RESET}    " \
+      "${frames[$((i % 10))]}" "$fil_str" "$usdfc_str" "$elapsed"
+    if (( fil_done == 1 && usdfc_done == 1 )); then
+      printf "\n"
+      ok "Funded! tFIL=$fil_str  USDFC=$usdfc_str"
+      trap - INT
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
 # Spinner while a command runs. Usage: `spinner "Installing foo" brew install foo`
 spinner() {
   local label="$1"; shift
@@ -305,9 +367,36 @@ else
 
     ok "Wallet generated — address: ${BOLD}$OPS_ADDR${RESET}"
     echo
-    warn "Fund this address on Filecoin Calibration before first upload:"
-    info "  tFIL  →  https://faucet.calibnet.chainsafe-fil.io/funds.html"
-    info "  USDFC →  https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc"
+    info "Both faucets need a one-time CAPTCHA solve. We can open them in your"
+    info "browser with the address pre-filled, then poll the chain until funded."
+    echo
+    if ask "Open faucets in browser and wait for funding?" y; then
+      # Put the address on the clipboard so the user only has to ⌘V it.
+      if command -v pbcopy >/dev/null 2>&1; then
+        printf '%s' "$OPS_ADDR" | pbcopy
+        ok "Address copied to clipboard — paste it into both faucets."
+      fi
+      open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
+      sleep 2
+      open "https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc" 2>/dev/null || true
+      info "  Browser opened. ⌘V to paste the address, solve the CAPTCHA, submit."
+      info "  Polling every 10s. Ctrl-C to skip and finish later."
+      echo
+      if poll_balances "$OPS_ADDR"; then
+        # Wallet is funded — chain it into setup-wallet so the user can boot dev right away.
+        echo
+        step "Running setup-wallet"
+        ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ) && \
+          ok "Ops wallet is approved + ready for uploads"
+        WALLET_READY=1
+      else
+        warn "Polling cancelled."
+      fi
+    else
+      warn "Skipping. Fund manually before first upload:"
+      info "  tFIL  →  https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  USDFC →  https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc"
+    fi
     echo
     info "Then run:  ${BOLD}cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet${RESET}"
   fi
@@ -356,11 +445,14 @@ ${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━�
   Console: ${BOLD}${BLUE}http://localhost:9001${RESET}  ${DIM}(minio, filbucket / filbucketsecret)${RESET}
 
 ${BOLD}Next:${RESET}
+$(if [[ "${WALLET_READY:-0}" != "1" ]]; then cat <<NEXT
   ${DIM}# One-time: fund the ops wallet + approve FWSS operator${RESET}
   cd $INSTALL_DIR
   pnpm --filter @filbucket/server setup-wallet
 
   ${DIM}# Then boot the stack${RESET}
+NEXT
+fi)
   pnpm dev
 
 ${BOLD}Native Mac app:${RESET}
