@@ -25,89 +25,122 @@ export function FileDetailPanel({
       }
     }
     void run()
+    const t = setInterval(run, 3000)
     return () => {
       cancelled = true
+      clearInterval(t)
     }
   }, [fileId])
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30">
-      <aside className="h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">File details</h2>
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-ink/20 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        className="h-full w-full max-w-md overflow-y-auto border-l border-line bg-paper-raised shadow-[-12px_0_40px_rgba(26,24,23,0.08)]"
+      >
+        <div className="flex items-start justify-between border-b border-line px-6 py-5">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">
+              ▸ File
+            </p>
+            <h2 className="mt-1 font-serif text-2xl text-ink">Details</h2>
+          </div>
           <button
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
+            className="rounded-full border border-line px-3 py-1 text-sm text-ink-soft transition-colors hover:border-line-strong hover:bg-paper"
           >
             Close
           </button>
         </div>
 
-        {err && (
-          <div className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-            {err}
-          </div>
-        )}
+        <div className="px-6 py-6">
+          {err && (
+            <div className="mb-6 rounded-xl border border-err/30 bg-err/5 px-4 py-3 text-sm text-err">
+              {err}
+            </div>
+          )}
 
-        {data && (
-          <>
-            <dl className="mt-6 space-y-4 text-sm">
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Name</dt>
-                <dd className="mt-1 break-all font-medium">{data.name}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Status</dt>
-                <dd className="mt-1">{FILE_STATE_LABEL[data.state as FileState]}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Uploaded</dt>
-                <dd className="mt-1">{new Date(data.createdAt).toLocaleString()}</dd>
-              </div>
-            </dl>
+          {data && (
+            <>
+              <div className="mb-8 break-all font-serif text-xl text-ink">{data.name}</div>
 
-            <a
-              href={downloadUrl(data.id)}
-              className="mt-6 inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-            >
-              Download
-            </a>
+              <dl className="space-y-5 text-sm">
+                <Row label="Status" value={FILE_STATE_LABEL[data.state as FileState] ?? 'Unknown'} />
+                <Row label="Uploaded" value={new Date(data.createdAt).toLocaleString()} />
+                <Row label="Updated" value={new Date(data.updatedAt).toLocaleString()} />
+              </dl>
 
-            {/* Advanced/technical details — collapsed by default. NOT user-facing. */}
-            <details className="mt-8 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-              <summary className="cursor-pointer font-medium text-slate-600">
-                Technical details (Phase 0 debug only)
-              </summary>
-              <div className="mt-3 space-y-3">
-                <div>
-                  <div className="font-semibold">Pieces</div>
-                  {data.pieces.length === 0 ? (
-                    <div className="text-slate-500">none yet</div>
-                  ) : (
-                    <ul className="mt-1 space-y-1 font-mono">
-                      {data.pieces.map((p) => (
-                        <li key={p.id} className="break-all">
-                          {p.pieceCid} · ds={p.datasetId ?? '-'} · sp={p.spProviderId ?? '-'}
+              <a
+                href={downloadUrl(data.id)}
+                className="mt-8 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5"
+              >
+                Download
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3v14" />
+                  <path d="m6 11 6 6 6-6" />
+                  <path d="M4 21h16" />
+                </svg>
+              </a>
+
+              {/* Internal-only technical details. Collapsed. */}
+              <details className="mt-10 rounded-xl border border-line bg-paper p-4 text-xs text-ink-soft">
+                <summary className="cursor-pointer font-mono uppercase tracking-wider text-ink-mute">
+                  Technical details (dev only)
+                </summary>
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <div className="mb-1 font-mono uppercase tracking-wider text-ink-mute">
+                      Pieces
+                    </div>
+                    {data.pieces.length === 0 ? (
+                      <div className="italic text-ink-mute">none yet</div>
+                    ) : (
+                      <ul className="space-y-1 font-mono">
+                        {data.pieces.map((p) => (
+                          <li key={p.id} className="break-all">
+                            {p.pieceCid}
+                            <span className="text-ink-mute">
+                              {' '}
+                              · ds={p.datasetId ?? '-'} · sp={p.spProviderId ?? '-'}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <div className="mb-1 font-mono uppercase tracking-wider text-ink-mute">
+                      Events
+                    </div>
+                    <ul className="space-y-1 font-mono">
+                      {data.events.map((e) => (
+                        <li key={e.id}>
+                          <span className="text-ink-mute">
+                            {new Date(e.createdAt).toLocaleTimeString()}
+                          </span>{' '}
+                          {e.kind}
                         </li>
                       ))}
                     </ul>
-                  )}
+                  </div>
                 </div>
-                <div>
-                  <div className="font-semibold">Events</div>
-                  <ul className="mt-1 space-y-1 font-mono">
-                    {data.events.map((e) => (
-                      <li key={e.id} className="break-all">
-                        {new Date(e.createdAt).toLocaleTimeString()} · {e.kind}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </details>
-          </>
-        )}
+              </details>
+            </>
+          )}
+        </div>
       </aside>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-6 border-b border-line/60 pb-4">
+      <dt className="font-mono text-[11px] uppercase tracking-[0.22em] text-ink-mute">{label}</dt>
+      <dd className="text-right text-ink">{value}</dd>
     </div>
   )
 }

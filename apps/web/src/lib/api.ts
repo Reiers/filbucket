@@ -6,9 +6,15 @@ import type {
 } from '@filbucket/shared'
 import { DEV_USER_ID, PUBLIC_API_URL } from './env'
 
-function authHeaders(): Record<string, string> {
+function jsonHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
+    'X-Dev-User': DEV_USER_ID,
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  return {
     'X-Dev-User': DEV_USER_ID,
   }
 }
@@ -17,6 +23,7 @@ export async function listFiles(bucketId: string): Promise<FileDTO[]> {
   const url = new URL('/api/files', PUBLIC_API_URL)
   url.searchParams.set('bucketId', bucketId)
   const res = await fetch(url.toString(), { headers: authHeaders(), cache: 'no-store' })
+
   if (!res.ok) throw new Error(`listFiles failed: ${res.status}`)
   const json = (await res.json()) as ListFilesResponse
   return json.files as FileDTO[]
@@ -39,7 +46,7 @@ export async function initUpload(params: {
 }): Promise<UploadInitResponse> {
   const res = await fetch(`${PUBLIC_API_URL}/api/uploads/init`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify(params),
   })
   if (!res.ok) throw new Error(`initUpload failed: ${res.status}`)

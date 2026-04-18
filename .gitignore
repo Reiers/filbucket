@@ -32,3 +32,9 @@ coverage/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+
+# Workspace artifacts
+home-preview.png
+filbucket-mark-preview.png
+filbucket-mark-64.png
+filbucket-mark-64-preview.png
