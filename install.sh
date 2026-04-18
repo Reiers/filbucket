@@ -428,9 +428,13 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
     info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
     if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "$EX_USDFC_HUMAN" == "0" ]]; then
       warn "Wallet exists but isn't fully funded yet."
-      info "  Fund + setup it manually with:"
-      info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
-      info "  See docs: https://github.com/Reiers/filbucket/blob/main/docs/getting-started/installer.md"
+      if [[ "$EX_FIL_HUMAN" == "0" ]]; then
+        info "  1. Get tFIL: paste $EXISTING_ADDR at https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      fi
+      if [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+        info "  2. Mint USDFC: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+      fi
+      info "  3. Approve FWSS: cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
     fi
   fi
 else
@@ -492,10 +496,10 @@ else
     # the funding instructions and continue.
     if [[ "${FILBUCKET_YES:-}" == "1" ]]; then
       warn "Non-interactive mode — skipping wallet funding."
-      info "  Fund manually then run setup-wallet:"
-      info "  1. Get tFIL: https://faucet.calibnet.chainsafe-fil.io/funds.html"
-      info "  2. Mint USDFC by collateralizing tFIL: https://stg.usdfc.net"
-      info "     (Connect wallet w/ PK below → Trove → deposit ~5 tFIL → borrow ~10 USDFC)"
+      info "  Fund + boot manually:"
+      info "  1. Get tFIL: paste address at https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  2. cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+      info "  3. cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       info "  Address: ${BOLD}$OPS_ADDR${RESET}"
     elif ask "Open faucet in browser and wait for tFIL funding?" y; then
       # Put the address on the clipboard so the user only has to ⌘V it.
@@ -504,39 +508,37 @@ else
         ok "Address copied to clipboard."
       fi
       open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
-      info "  Browser opened. ⌘V to paste address → click Send Funds."
+      info "  Browser opened. ⌘V to paste address → click Send Funds (100 tFIL)."
       info "  Polling chain every 10s for tFIL. Ctrl-C to skip."
       echo
       if poll_tfil "$OPS_ADDR"; then
+        # USDFC: skip the chainsafe drip (dead) AND the manual Trove app
+        # (clunky). Mint programmatically via our own mint-usdfc script,
+        # which collateralizes ~150 tFIL and borrows 220 USDFC. Tested.
         echo
-        warn "Now you need USDFC. The chainsafe USDFC drip faucet has been"
-        warn "deprecated; the official path is to mint USDFC via the Trove app:"
-        info "  Open: ${BOLD}${BLUE}https://stg.usdfc.net${RESET}"
-        info "  1. Connect a wallet (or import this PK into MetaMask: see .env)"
-        info "  2. Go to Trove → Open Trove → deposit ~5 tFIL as collateral"
-        info "  3. Borrow at least 5 USDFC (covers FilBucket Phase 0 dev)"
+        step "Minting USDFC by collateralizing tFIL (Trove)"
+        info "  Deposits ~150 tFIL of collateral, borrows 220 USDFC. Takes ~90s."
         echo
-        if ask "Open the Trove app now?" y; then
-          open "https://stg.usdfc.net" 2>/dev/null || true
-        fi
-        info "  Polling chain every 10s for USDFC. Ctrl-C to skip + finish later."
-        if poll_usdfc "$OPS_ADDR"; then
-          # Both balances landed — run setup-wallet automatically.
+        if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
+          ok "USDFC minted via Trove"
+          # Now run setup-wallet to deposit USDFC into Filecoin Pay + approve FWSS.
           echo
-          step "Running setup-wallet"
+          step "Running setup-wallet (Filecoin Pay + FWSS approval)"
           ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ) && \
             ok "Ops wallet is approved + ready for uploads"
           WALLET_READY=1
         else
-          warn "USDFC polling cancelled."
+          warn "USDFC mint failed. Check above. You can retry with:"
+          info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
         fi
       else
         warn "tFIL polling cancelled."
       fi
     else
-      warn "Skipping. Fund manually before first upload:"
-      info "  1. tFIL: https://faucet.calibnet.chainsafe-fil.io/funds.html"
-      info "  2. USDFC: open Trove at https://stg.usdfc.net, deposit tFIL collateral"
+      warn "Skipping. Fund + boot manually before first upload:"
+      info "  1. tFIL: paste $OPS_ADDR at https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  2. cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+      info "  3. cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
     fi
     echo
     info "Then run:  ${BOLD}cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet${RESET}"

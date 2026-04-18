@@ -16,7 +16,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/scripts/seed.ts",
-    "setup-wallet": "tsx src/scripts/setup-ops-wallet.ts"
+    "setup-wallet": "tsx src/scripts/setup-ops-wallet.ts",
+    "mint-usdfc": "tsx src/scripts/mint-usdfc.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.662.0",

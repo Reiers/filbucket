@@ -25,7 +25,7 @@ When `get.filbucket.ai` is live, you'll be able to use `curl -fsSL https://get.f
 7. **`pnpm install`** the workspace.
 8. **Offers to generate a fresh Filecoin calibration wallet.** Writes the PK to `.env` with chmod 600. Prints the address.
 9. **Opens the tFIL faucet in your browser** with the address copied to your clipboard. Polls the chain until tFIL lands.
-10. **Walks you through minting USDFC via the Trove app** ([stg.usdfc.net](https://stg.usdfc.net)). There is no plain USDFC drip faucet — you collateralize tFIL to borrow USDFC. Polls until USDFC lands.
+10. **Mints USDFC programmatically.** There's no plain USDFC drip faucet anymore. The installer runs `mint-usdfc`, which opens a Liquity-style Trove on calibration: deposits ~150 tFIL of collateral, borrows 220 USDFC. Single tx, ~90s, no browser, no MetaMask, no wallet to connect.
 11. **Runs Drizzle migrations** and seeds the dev user + default bucket.
 12. **Auto-runs `setup-wallet`** (USDFC deposit into Filecoin Pay + FWSS operator approval).
 13. **Prints the final command**: `pnpm dev`.
