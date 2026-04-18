@@ -41,14 +41,23 @@ Most Filecoin products expose the plumbing. FilBucket wins by doing the opposite
 ## Screenshots
 
 <div align="center">
+  <img src="design-previews/08-bucket-drag.png" alt="Drop files in the bucket" width="820" />
+  <br/><sub><b>The signature moment</b> — drag files near the bucket; the lid lifts to catch them.</sub>
+</div>
+
+<div align="center">
   <table>
     <tr>
-      <td width="50%"><img src="design-previews/home.png" alt="Home" /><br/><sub><b>Home</b> — drop files into the bucket, watch them secure in the background.</sub></td>
-      <td width="50%"><img src="design-previews/share.png" alt="Share page" /><br/><sub><b>Share page</b> — what a recipient sees. No wallet, no login, no Web3 language.</sub></td>
+      <td width="50%"><img src="design-previews/06-home-final.png" alt="Home" /><br/><sub><b>Home</b> — Fraunces display, warm paper, one accent.</sub></td>
+      <td width="50%"><img src="design-previews/04-share-page.png" alt="Share page" /><br/><sub><b>Share page</b> — what a recipient sees. No wallet, no login, no Web3 language.</sub></td>
     </tr>
     <tr>
-      <td><img src="design-previews/library.png" alt="Library" /><br/><sub><b>Library</b> — live progress bars, real state transitions, previews.</sub></td>
-      <td><img src="design-previews/macos-app.png" alt="macOS app" /><br/><sub><b>macOS app</b> — native drag-and-drop, system tray.</sub></td>
+      <td><img src="design-previews/02-library-mixed.png" alt="Library" /><br/><sub><b>Library</b> — live progress bars, real state transitions, inline image thumbnails.</sub></td>
+      <td><img src="apps/mac/design-previews/desktop.png" alt="macOS app" /><br/><sub><b>Native macOS app</b> — SwiftUI, AVKit + PDFKit previews, drag-drop for files and folders.</sub></td>
+    </tr>
+    <tr>
+      <td><img src="design-previews/07-preview-image.png" alt="Preview" /><br/><sub><b>Inline previews</b> — images, video (with scrubbing), audio, PDF, text.</sub></td>
+      <td><img src="design-previews/03-library-files.png" alt="Library close-up" /><br/><sub><b>Library close-up</b> — folder paths preserved, Secured / Ready / Failed states.</sub></td>
     </tr>
   </table>
 </div>
@@ -205,7 +214,7 @@ In-repo:
 ## Stack
 
 **Web**
-Next.js 15 · React 19 · Tailwind 3 · Framer Motion · Instrument Serif + General Sans + TX-02 Mono
+Next.js 15 · React 19 · Tailwind 3 · Framer Motion · **Fraunces** (display) + **Plus Jakarta Sans** (body) + JetBrains Mono
 
 **Backend**
 Node 22 · TypeScript · Fastify · Drizzle ORM · Postgres 16 · BullMQ · Redis 7 · MinIO (S3-compat)
