@@ -95,6 +95,57 @@ export function downloadUrl(id: string): string {
   return `${PUBLIC_API_URL}/api/files/${id}/download?u=${u}`
 }
 
+export interface CreateShareParams {
+  password?: string | null
+  expiresInSeconds?: number | null
+  maxDownloads?: number | null
+}
+
+export interface ShareSummary {
+  id: string
+  token: string
+  url: string
+  hasPassword: boolean
+  expiresAt: string | null
+  maxDownloads: number | null
+  downloadCount: number
+  revokedAt: string | null
+  createdAt: string
+}
+
+export async function listShares(fileId: string): Promise<ShareSummary[]> {
+  const res = await fetch(`${PUBLIC_API_URL}/api/files/${fileId}/shares`, {
+    headers: authHeaders(),
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`listShares failed: ${res.status}`)
+  const body = (await res.json()) as { shares: ShareSummary[] }
+  return body.shares
+}
+
+export async function createShare(
+  fileId: string,
+  params: CreateShareParams,
+): Promise<ShareSummary> {
+  const res = await fetch(`${PUBLIC_API_URL}/api/files/${fileId}/shares`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error(`createShare failed: ${res.status}`)
+  return (await res.json()) as ShareSummary
+}
+
+export async function revokeShare(id: string): Promise<void> {
+  const res = await fetch(`${PUBLIC_API_URL}/api/shares/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`revokeShare failed: ${res.status}`)
+  }
+}
+
 export async function deleteFile(id: string): Promise<void> {
   const res = await fetch(`${PUBLIC_API_URL}/api/files/${id}`, {
     method: 'DELETE',

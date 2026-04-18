@@ -5,6 +5,7 @@ import { closeDb } from './db/client.js'
 import { assertCalibrationOnly, env } from './env.js'
 import { closeRedis } from './queue/redis.js'
 import { fileRoutes } from './routes/files.js'
+import { shareRoutes } from './routes/shares.js'
 import { uploadRoutes } from './routes/uploads.js'
 
 async function main(): Promise<void> {
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
 
   await uploadRoutes(app)
   await fileRoutes(app)
+  await shareRoutes(app)
 
   // Fire the wallet assertion in the background — we want the server up even if the wallet
   // isn't funded yet, so Nicklas can hit /healthz and figure out what's wrong.

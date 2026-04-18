@@ -3,6 +3,7 @@
 import { type FileDetailDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
 import { useEffect, useState } from 'react'
 import { downloadUrl, getFile } from '../lib/api'
+import { ShareModal } from './ShareModal'
 
 export function FileDetailPanel({
   fileId,
@@ -13,6 +14,7 @@ export function FileDetailPanel({
 }) {
   const [data, setData] = useState<FileDetailDTO | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [showShare, setShowShare] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -73,17 +75,40 @@ export function FileDetailPanel({
                 <Row label="Updated" value={new Date(data.updatedAt).toLocaleString()} />
               </dl>
 
-              <a
-                href={downloadUrl(data.id)}
-                className="mt-8 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5"
-              >
-                Download
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3v14" />
-                  <path d="m6 11 6 6 6-6" />
-                  <path d="M4 21h16" />
-                </svg>
-              </a>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <a
+                  href={downloadUrl(data.id)}
+                  className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5"
+                >
+                  Download
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3v14" />
+                    <path d="m6 11 6 6 6-6" />
+                    <path d="M4 21h16" />
+                  </svg>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setShowShare(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-paper-raised px-5 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-paper"
+                >
+                  Share
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                </button>
+              </div>
+              {showShare && (
+                <ShareModal
+                  fileId={data.id}
+                  fileName={data.name}
+                  onClose={() => setShowShare(false)}
+                />
+              )}
 
               {/* Internal-only technical details. Collapsed. */}
               <details className="mt-10 rounded-xl border border-line bg-paper p-4 text-xs text-ink-soft">

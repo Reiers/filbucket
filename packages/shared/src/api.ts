@@ -83,6 +83,47 @@ export const ListFilesResponse = z.object({
 })
 export type ListFilesResponse = z.infer<typeof ListFilesResponse>
 
+// ---- Shares ----
+
+export const ShareCreateRequest = z.object({
+  password: z.string().min(4).max(128).optional().nullable(),
+  expiresInSeconds: z.number().int().positive().optional().nullable(),
+  maxDownloads: z.number().int().positive().optional().nullable(),
+})
+export type ShareCreateRequest = z.infer<typeof ShareCreateRequest>
+
+export const ShareDTO = z.object({
+  id: z.string().uuid(),
+  token: z.string(),
+  url: z.string(),
+  hasPassword: z.boolean(),
+  expiresAt: z.string().nullable(),
+  maxDownloads: z.number().int().positive().nullable(),
+  downloadCount: z.number().int().nonnegative(),
+  revokedAt: z.string().nullable(),
+  createdAt: z.string(),
+})
+export type ShareDTO = z.infer<typeof ShareDTO>
+
+export const SharePublicStatus = z.enum(['active', 'expired', 'revoked', 'exhausted'])
+export type SharePublicStatus = z.infer<typeof SharePublicStatus>
+
+export const SharePublicDTO = z.object({
+  status: SharePublicStatus,
+  hasPassword: z.boolean(),
+  file: z
+    .object({
+      name: z.string(),
+      sizeBytes: z.number().int().nonnegative(),
+      mimeType: z.string(),
+    })
+    .nullable(),
+  expiresAt: z.string().nullable(),
+  maxDownloads: z.number().int().positive().nullable(),
+  downloadCount: z.number().int().nonnegative(),
+})
+export type SharePublicDTO = z.infer<typeof SharePublicDTO>
+
 export const HealthzResponse = z.object({
   ok: z.boolean(),
   chain: z.string(),

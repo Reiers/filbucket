@@ -24,11 +24,13 @@
     "@fastify/cors": "10.0.1",
     "@filbucket/shared": "workspace:*",
     "@filoz/synapse-sdk": "0.40.3",
+    "argon2": "^0.44.0",
     "bullmq": "5.21.2",
     "dotenv": "16.4.5",
     "drizzle-orm": "0.36.0",
     "fastify": "5.0.0",
     "ioredis": "5.4.1",
+    "nanoid": "^5.1.9",
     "pg": "8.13.0",
     "viem": "2.21.34",
     "zod": "3.23.8"

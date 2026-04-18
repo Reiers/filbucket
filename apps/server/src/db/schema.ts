@@ -115,6 +115,42 @@ export const commitEvents = pgTable('commit_events', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const shares = pgTable(
+  'shares',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    fileId: uuid('file_id')
+      .notNull()
+      .references(() => files.id, { onDelete: 'cascade' }),
+    // Short URL-safe token, ~95 bits entropy. Indexed unique.
+    token: text('token').notNull(),
+    // argon2id hash of the share password, if any. Null = no password.
+    passwordHash: text('password_hash'),
+    // Null = never expires. Most shares will have one.
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    // Null = unlimited downloads.
+    maxDownloads: integer('max_downloads'),
+    downloadCount: integer('download_count').notNull().default(0),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tokenUnique: uniqueIndex('shares_token_unique').on(t.token),
+  }),
+)
+
+export const shareAccesses = pgTable('share_accesses', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  shareId: uuid('share_id')
+    .notNull()
+    .references(() => shares.id, { onDelete: 'cascade' }),
+  // 'view' (landed on /s page), 'download' (hit /download), 'password_fail', 'expired', 'revoked'
+  kind: text('kind').notNull(),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // --- relation-free row types for convenience ---
 
 export type UserRow = typeof users.$inferSelect
@@ -123,3 +159,5 @@ export type FileRow = typeof files.$inferSelect
 export type FilePieceRow = typeof filePieces.$inferSelect
 export type DatasetRailRow = typeof datasetRails.$inferSelect
 export type CommitEventRow = typeof commitEvents.$inferSelect
+export type ShareRow = typeof shares.$inferSelect
+export type ShareAccessRow = typeof shareAccesses.$inferSelect
