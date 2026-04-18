@@ -216,7 +216,8 @@ to_install=()
 if [[ "${NEED_NODE:-0}" == "1" ]]; then to_install+=(node@22); fi
 if ! brew list postgresql@16 >/dev/null 2>&1; then to_install+=(postgresql@16); fi
 if ! brew list redis           >/dev/null 2>&1; then to_install+=(redis); fi
-if ! brew list minio/stable/minio >/dev/null 2>&1; then to_install+=(minio/stable/minio); fi
+# minio is plain Homebrew formula now, not the legacy minio/stable/ tap.
+if ! brew list minio            >/dev/null 2>&1; then to_install+=(minio); fi
 if ! brew list minio-mc         >/dev/null 2>&1; then to_install+=(minio-mc); fi
 if [[ "${NEED_LIBRSVG:-0}" == "1" ]]; then to_install+=(librsvg); fi
 
@@ -245,23 +246,37 @@ ensure_service() {
 ensure_service postgresql@16
 ensure_service redis
 
-# MinIO runs under brew services. If something else (like a manual `minio server`)
-# is already listening on :9000, don't fight it — use what's there.
+# MinIO: run as a nohup background process under the user, not brew services.
+# brew services + minio's launchd wiring is fragile (env vars don't carry, slow
+# startup, opaque failures). A plain nohup with a launcher script is rock solid.
 if curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
   ok "MinIO already responding on :9000"
-elif brew services list | grep -qE "^minio\s+started"; then
-  ok "minio already running"
 else
-  export MINIO_ROOT_USER="${MINIO_ROOT_USER:-filbucket}"
-  export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-filbucketsecret}"
-  export MINIO_VOLUMES="$MINIO_DIR"
   mkdir -p "$MINIO_DIR"
-  spinner "Starting minio" brew services start minio/stable/minio
-  # Wait for it
-  for _ in {1..20}; do
-    if curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then break; fi
+  LAUNCHER="$HOME/.filbucket/launch-minio.sh"
+  mkdir -p "$(dirname "$LAUNCHER")"
+  cat > "$LAUNCHER" <<MINIO_EOF
+#!/usr/bin/env bash
+export MINIO_ROOT_USER="${MINIO_ROOT_USER:-filbucket}"
+export MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-filbucketsecret}"
+exec /opt/homebrew/bin/minio server "$MINIO_DIR" --address :9000 --console-address :9001
+MINIO_EOF
+  chmod +x "$LAUNCHER"
+  nohup "$LAUNCHER" > "$HOME/.filbucket/minio.log" 2>&1 &
+  disown
+  printf "  ${BLUE}⋯${RESET} ${DIM}Starting minio (this can take ~10s)${RESET}"
+  for i in {1..40}; do
+    if curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+      printf "\r  ${GREEN}✓${RESET} ${DIM}minio started (PID via nohup, logs in ~/.filbucket/minio.log)${RESET}%*s\n" 20 ''
+      break
+    fi
+    printf "."
     sleep 0.5
   done
+  if ! curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+    printf "\n"
+    fail "minio didn't come up in 20s. Check ~/.filbucket/minio.log"
+  fi
 fi
 
 # Wait for Postgres to accept connections
@@ -370,7 +385,16 @@ else
     info "Faucets are rate-limited but normally hands-free in a real browser."
     info "We'll open both, you paste ⌘V, click submit. Done."
     echo
-    if ask "Open faucets in browser and wait for funding?" y; then
+    # In non-interactive mode (FILBUCKET_YES=1) we deliberately skip the browser
+    # step — there's no human to click submit, so polling would just hang. Print
+    # the funding instructions and continue.
+    if [[ "${FILBUCKET_YES:-}" == "1" ]]; then
+      warn "Non-interactive mode — skipping faucet flow."
+      info "  Fund manually then run setup-wallet:"
+      info "  tFIL  →  https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  USDFC →  https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc"
+      info "  Address: ${BOLD}$OPS_ADDR${RESET}"
+    elif ask "Open faucets in browser and wait for funding?" y; then
       # Put the address on the clipboard so the user only has to ⌘V it.
       if command -v pbcopy >/dev/null 2>&1; then
         printf '%s' "$OPS_ADDR" | pbcopy
