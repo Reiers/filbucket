@@ -20,8 +20,12 @@ export function toFilePieceDTO(row: FilePieceRow): FilePieceDTO {
     pieceCid: row.pieceCid,
     byteStart: row.byteStart,
     byteEnd: row.byteEnd,
+    chunkIndex: row.chunkIndex,
+    chunkTotal: row.chunkTotal,
     spProviderId: row.spProviderId,
     datasetId: row.datasetId,
+    retrievalUrl: row.retrievalUrl,
+    role: row.role,
     createdAt: row.createdAt.toISOString(),
   }
 }

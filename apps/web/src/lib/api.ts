@@ -53,13 +53,30 @@ export async function initUpload(params: {
   return (await res.json()) as UploadInitResponse
 }
 
-export async function putObject(url: string, file: File): Promise<void> {
-  const res = await fetch(url, {
-    method: 'PUT',
-    body: file,
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+export async function putObject(
+  url: string,
+  file: File,
+  onProgress?: (uploaded: number, total: number) => void,
+): Promise<void> {
+  // XHR because fetch() doesn't expose upload progress in most browsers.
+  // Node fetch supports ReadableStream request bodies but browsers don't yet.
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url, true)
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    if (onProgress != null) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) onProgress(e.loaded, e.total)
+      })
+    }
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`PUT to MinIO failed: ${xhr.status}`))
+    })
+    xhr.addEventListener('error', () => reject(new Error('PUT to MinIO network error')))
+    xhr.addEventListener('abort', () => reject(new Error('PUT to MinIO aborted')))
+    xhr.send(file)
   })
-  if (!res.ok) throw new Error(`PUT to MinIO failed: ${res.status}`)
 }
 
 export async function completeUpload(fileId: string): Promise<FileDTO> {

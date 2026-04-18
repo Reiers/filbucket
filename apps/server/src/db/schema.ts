@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -29,6 +30,10 @@ export const commitEventKindEnum = pgEnum('commit_event_kind', [
   'first_proof_ok',
   'fault',
   'repair',
+  'chunk_started',
+  'chunk_bytes',
+  'chunk_stored',
+  'chunk_committed',
 ])
 
 // --- tables ---
@@ -70,8 +75,16 @@ export const filePieces = pgTable('file_pieces', {
   pieceCid: text('piece_cid').notNull(),
   byteStart: bigint('byte_start', { mode: 'number' }).notNull(),
   byteEnd: bigint('byte_end', { mode: 'number' }).notNull(),
+  // 0-indexed chunk position within the file. chunkTotal = total chunks.
+  // For files ≤ one piece, chunkIndex=0 and chunkTotal=1.
+  chunkIndex: integer('chunk_index').notNull().default(0),
+  chunkTotal: integer('chunk_total').notNull().default(1),
   spProviderId: text('sp_provider_id'),
   datasetId: text('dataset_id'),
+  // Retrieval URL for this copy on its SP. Needed for Phase 1 restore-from-cold.
+  retrievalUrl: text('retrieval_url'),
+  // 'primary' | 'secondary' — free-text for now, not an enum.
+  role: text('role'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

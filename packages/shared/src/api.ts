@@ -23,6 +23,14 @@ export const UploadCompleteParams = z.object({
 })
 export type UploadCompleteParams = z.infer<typeof UploadCompleteParams>
 
+export const UploadProgress = z.object({
+  chunkIndex: z.number().int().nonnegative(),
+  chunkTotal: z.number().int().positive(),
+  totalUploaded: z.number().int().nonnegative(),
+  totalBytes: z.number().int().nonnegative(),
+})
+export type UploadProgress = z.infer<typeof UploadProgress>
+
 export const FileDTO = z.object({
   id: z.string().uuid(),
   bucketId: z.string().uuid(),
@@ -30,6 +38,7 @@ export const FileDTO = z.object({
   sizeBytes: z.number().int().nonnegative(),
   mimeType: z.string(),
   state: z.enum(FILE_STATE_VALUES as [string, ...string[]]),
+  progress: UploadProgress.nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -40,8 +49,12 @@ export const FilePieceDTO = z.object({
   pieceCid: z.string(),
   byteStart: z.number().int().nonnegative(),
   byteEnd: z.number().int().nonnegative(),
+  chunkIndex: z.number().int().nonnegative(),
+  chunkTotal: z.number().int().positive(),
   spProviderId: z.string().nullable(),
   datasetId: z.string().nullable(),
+  retrievalUrl: z.string().nullable(),
+  role: z.string().nullable(),
   createdAt: z.string(),
 })
 export type FilePieceDTO = z.infer<typeof FilePieceDTO>

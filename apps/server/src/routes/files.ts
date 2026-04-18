@@ -1,5 +1,5 @@
 import { ListFilesQuery } from '@filbucket/shared'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { db } from '../db/client.js'
 import { buckets, commitEvents, filePieces, files } from '../db/schema.js'
@@ -35,7 +35,64 @@ export async function fileRoutes(app: FastifyInstance): Promise<void> {
       .from(files)
       .where(eq(files.bucketId, parsed.data.bucketId))
       .orderBy(desc(files.createdAt))
-    reply.send({ files: rows.map(toFileDTO) })
+
+    // Look up the most recent chunk_bytes progress event per file (if any)
+    // so the UI can render a live progress bar on in-flight uploads.
+    const fileIds = rows.map((r) => r.id)
+    const progressByFile = new Map<
+      string,
+      { chunkIndex: number; chunkTotal: number; totalUploaded: number; totalBytes: number }
+    >()
+    if (fileIds.length > 0) {
+      // Per-file DISTINCT-ON over chunk_bytes events sorted by createdAt DESC.
+      const events = await db().execute(
+        sql`
+          SELECT DISTINCT ON (file_id) file_id, payload, created_at
+          FROM commit_events
+          WHERE kind = 'chunk_bytes' AND file_id IN (${sql.join(
+            fileIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+          ORDER BY file_id, created_at DESC
+        `,
+      )
+      for (const row of events.rows as Array<{
+        file_id: string
+        payload: unknown
+      }>) {
+        const p = row.payload as {
+          chunkIndex?: number
+          chunkTotal?: number
+          totalUploaded?: number
+          totalBytes?: number
+        } | null
+        if (
+          p != null &&
+          typeof p.chunkIndex === 'number' &&
+          typeof p.chunkTotal === 'number' &&
+          typeof p.totalUploaded === 'number' &&
+          typeof p.totalBytes === 'number'
+        ) {
+          progressByFile.set(row.file_id, {
+            chunkIndex: p.chunkIndex,
+            chunkTotal: p.chunkTotal,
+            totalUploaded: p.totalUploaded,
+            totalBytes: p.totalBytes,
+          })
+        }
+      }
+    }
+
+    reply.send({
+      files: rows.map((r) => {
+        const base = toFileDTO(r)
+        // Only expose progress while the upload is actually in flight.
+        if (r.state === 'hot_ready' && progressByFile.has(r.id)) {
+          return { ...base, progress: progressByFile.get(r.id) }
+        }
+        return base
+      }),
+    })
   })
 
   // GET /api/files/:id — file + pieces + events (debugging UI)

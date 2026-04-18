@@ -16,29 +16,41 @@ import {
   watchFirstProofQ,
 } from '../queue/queues.js'
 import { redis } from '../queue/redis.js'
-import { getObjectStream } from '../storage/s3.js'
+import { Readable } from 'node:stream'
+import { getObjectStream, getObjectChunkStream } from '../storage/s3.js'
 
 /**
- * Collect a readable stream into a single Uint8Array.
- * We stream from MinIO to stay OOM-safe up to the file size; the final buffer
- * still fits in memory because Phase 0 caps uploads well under 200 MiB.
- * Phase 1 will switch to Synapse SDK's streaming upload when we chunk >200 MiB.
+ * Max bytes per Filecoin piece / Synapse upload call.
+ * Synapse SDK accepts up to 200 MiB per upload; we leave a little headroom.
  */
-async function collectBytes(source: AsyncIterable<Buffer | Uint8Array>): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for await (const chunk of source) {
-    const u8 = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
-    chunks.push(u8)
-    total += u8.byteLength
-  }
-  const out = new Uint8Array(total)
+const MAX_PIECE_BYTES = 200 * 1024 * 1024 // 200 MiB
+
+/** How often the worker writes a chunk_bytes progress event (bytes). */
+const PROGRESS_EVENT_STRIDE_BYTES = 4 * 1024 * 1024 // 4 MiB
+
+/**
+ * Plan how to chunk a file. Returns an array of [byteStart, byteEnd] inclusive ranges.
+ * Files <= MAX_PIECE_BYTES produce a single chunk with chunkIndex=0, chunkTotal=1.
+ */
+function planChunks(sizeBytes: number): { start: number; end: number }[] {
+  if (sizeBytes <= 0) return [{ start: 0, end: 0 }]
+  const out: { start: number; end: number }[] = []
   let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
+  while (offset < sizeBytes) {
+    const end = Math.min(offset + MAX_PIECE_BYTES, sizeBytes) - 1
+    out.push({ start: offset, end })
+    offset = end + 1
   }
   return out
+}
+
+/**
+ * Convert a Node Readable into a Web ReadableStream (what Synapse SDK wants).
+ * Synapse's UploadPieceStreamingData accepts either Web or Node ReadableStream, but
+ * mixing stream types across library boundaries gets spooky; normalize to Web here.
+ */
+function toWebStream(node: Readable): ReadableStream<Uint8Array> {
+  return Readable.toWeb(node) as unknown as ReadableStream<Uint8Array>
 }
 
 // PDPVerifier proxy on calibration. Used for reading challenge-epoch state directly
@@ -110,109 +122,176 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
         throw new Error(`durability: file has no hot_cache_key: ${fileId}`)
       }
 
-      // 1. Stream from MinIO, collect into a buffer.
-      const { stream } = await getObjectStream(file.hotCacheKey)
-      const bytes = await collectBytes(stream as AsyncIterable<Buffer>)
-
+      const totalSize = Number(file.sizeBytes)
+      const chunks = planChunks(totalSize)
+      const chunkTotal = chunks.length
       const s = synapse()
 
-      // 2. Upload via Synapse (auto SP selection + multi-copy + pull + commit).
       try {
-        const result = await s.storage.upload(bytes, {
-          metadata: { Application: 'FilBucket' },
-        })
+        const allCopyDataSets = new Set<string>()
+        let bytesDoneGlobal = 0
 
-        // Record store_ok event.
-        await db().insert(commitEvents).values({
-          fileId,
-          kind: 'store_ok',
-          payload: {
-            pieceCid: String(result.pieceCid),
-            size: result.size,
-            requestedCopies: result.requestedCopies,
-            complete: result.complete,
-            copies: result.copies.map((c) => ({
-              providerId: c.providerId.toString(),
-              dataSetId: c.dataSetId.toString(),
-              pieceId: c.pieceId.toString(),
-              role: c.role,
-              isNewDataSet: c.isNewDataSet,
-            })),
-            failedAttempts: result.failedAttempts.map((f) => ({
-              providerId: f.providerId.toString(),
-              role: f.role,
-              error: f.error,
-              explicit: f.explicit,
-            })),
-          },
-        })
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const ck = chunks[chunkIndex]
+          if (ck == null) throw new Error('planChunks returned an empty range')
+          const chunkSize = ck.end - ck.start + 1
 
-        // 3. Insert file_pieces rows (one per copy).
-        const pieceCidStr = String(result.pieceCid)
-        if (result.copies.length > 0) {
-          await db()
-            .insert(filePieces)
-            .values(
-              result.copies.map((c) => ({
-                fileId,
-                pieceCid: pieceCidStr,
-                byteStart: 0,
-                byteEnd: Math.max(0, Number(result.size) - 1),
-                spProviderId: c.providerId.toString(),
-                datasetId: c.dataSetId.toString(),
-              })),
-            )
-        }
+          await db().insert(commitEvents).values({
+            fileId,
+            kind: 'chunk_started',
+            payload: { chunkIndex, chunkTotal, start: ck.start, end: ck.end, size: chunkSize },
+          })
 
-        // 4. Upsert dataset_rails per unique dataset.
-        // We don't have the pdpRailId handed to us by upload(); look it up via warmStorage.getDataSet.
-        const seen = new Set<string>()
-        for (const c of result.copies) {
-          const key = c.dataSetId.toString()
-          if (seen.has(key)) continue
-          seen.add(key)
-          try {
-            const ws = new WarmStorageService({ client: s.client })
-            const info = await ws.getDataSet({ dataSetId: c.dataSetId })
-            if (info != null) {
-              await db()
-                .insert(datasetRails)
+          // Stream this chunk's byte range from MinIO directly into Synapse.
+          const nodeStream =
+            chunks.length === 1
+              ? (await getObjectStream(file.hotCacheKey)).stream
+              : (await getObjectChunkStream(file.hotCacheKey, ck.start, ck.end)).stream
+          const webStream = toWebStream(nodeStream)
+
+          // Per-chunk progress: emit chunk_bytes every PROGRESS_EVENT_STRIDE_BYTES.
+          let bytesThisChunk = 0
+          let nextProgressMark = PROGRESS_EVENT_STRIDE_BYTES
+          const onProgress = (bytesUploaded: number): void => {
+            bytesThisChunk = bytesUploaded
+            const totalUploaded = bytesDoneGlobal + bytesThisChunk
+            if (bytesThisChunk >= nextProgressMark || bytesThisChunk >= chunkSize) {
+              nextProgressMark = bytesThisChunk + PROGRESS_EVENT_STRIDE_BYTES
+              // Fire-and-forget; we don't await inside the progress callback.
+              void db()
+                .insert(commitEvents)
                 .values({
-                  datasetId: key,
-                  providerId: info.providerId.toString(),
-                  railId: info.pdpRailId.toString(),
-                  payer: info.payer,
-                  payee: info.payee,
-                  active: true,
+                  fileId,
+                  kind: 'chunk_bytes',
+                  payload: {
+                    chunkIndex,
+                    chunkTotal,
+                    bytes: bytesThisChunk,
+                    totalBytes: totalSize,
+                    totalUploaded,
+                  },
                 })
-                .onConflictDoUpdate({
-                  target: datasetRails.datasetId,
-                  set: {
+                .catch(() => {
+                  // Swallow — progress events are advisory, not critical.
+                })
+            }
+          }
+
+          // Synapse SDK accepts a Web ReadableStream directly.
+          // It returns UploadResult with copies[] and failedAttempts[].
+          const result = await s.storage.upload(webStream, {
+            metadata: { Application: 'FilBucket' },
+            callbacks: { onProgress },
+          })
+
+          bytesDoneGlobal += chunkSize
+
+          // Record per-chunk store_ok event (kept as store_ok so existing UI keeps working).
+          await db().insert(commitEvents).values({
+            fileId,
+            kind: 'store_ok',
+            payload: {
+              chunkIndex,
+              chunkTotal,
+              pieceCid: String(result.pieceCid),
+              size: result.size,
+              requestedCopies: result.requestedCopies,
+              complete: result.complete,
+              copies: result.copies.map((c) => ({
+                providerId: c.providerId.toString(),
+                dataSetId: c.dataSetId.toString(),
+                pieceId: c.pieceId.toString(),
+                role: c.role,
+                retrievalUrl: c.retrievalUrl,
+                isNewDataSet: c.isNewDataSet,
+              })),
+              failedAttempts: result.failedAttempts.map((f) => ({
+                providerId: f.providerId.toString(),
+                role: f.role,
+                error: f.error,
+                explicit: f.explicit,
+              })),
+            },
+          })
+
+          // Insert one file_pieces row per copy for this chunk.
+          const pieceCidStr = String(result.pieceCid)
+          if (result.copies.length > 0) {
+            await db()
+              .insert(filePieces)
+              .values(
+                result.copies.map((c) => ({
+                  fileId,
+                  pieceCid: pieceCidStr,
+                  byteStart: ck.start,
+                  byteEnd: ck.end,
+                  chunkIndex,
+                  chunkTotal,
+                  spProviderId: c.providerId.toString(),
+                  datasetId: c.dataSetId.toString(),
+                  retrievalUrl: c.retrievalUrl,
+                  role: c.role,
+                })),
+              )
+          }
+
+          // Upsert dataset_rails for each new dataset we've touched this chunk.
+          for (const c of result.copies) {
+            const key = c.dataSetId.toString()
+            allCopyDataSets.add(key)
+            try {
+              const ws = new WarmStorageService({ client: s.client })
+              const info = await ws.getDataSet({ dataSetId: c.dataSetId })
+              if (info != null) {
+                await db()
+                  .insert(datasetRails)
+                  .values({
+                    datasetId: key,
                     providerId: info.providerId.toString(),
                     railId: info.pdpRailId.toString(),
                     payer: info.payer,
                     payee: info.payee,
                     active: true,
+                  })
+                  .onConflictDoUpdate({
+                    target: datasetRails.datasetId,
+                    set: {
+                      providerId: info.providerId.toString(),
+                      railId: info.pdpRailId.toString(),
+                      payer: info.payer,
+                      payee: info.payee,
+                      active: true,
+                    },
+                  })
+              }
+            } catch (err) {
+              await db()
+                .insert(commitEvents)
+                .values({
+                  fileId,
+                  kind: 'fault',
+                  payload: {
+                    reason: 'rail_lookup_failed',
+                    dataSetId: key,
+                    chunkIndex,
+                    detail: String(err),
                   },
                 })
             }
-          } catch (err) {
-            // Non-fatal: rails row is a convenience index, not the source of truth.
-            await db()
-              .insert(commitEvents)
-              .values({
-                fileId,
-                kind: 'fault',
-                payload: { reason: 'rail_lookup_failed', dataSetId: key, detail: String(err) },
-              })
           }
+
+          await db().insert(commitEvents).values({
+            fileId,
+            kind: 'chunk_committed',
+            payload: { chunkIndex, chunkTotal, pieceCid: pieceCidStr },
+          })
         }
 
-        // Note: we intentionally DO NOT change file.state here. It stays hot_ready until first proof.
+        // Note: we intentionally DO NOT change file.state here. It stays hot_ready
+        // until first proof on at least one dataset.
 
-        // 5. Snapshot each dataset's current nextChallengeEpoch so the watcher can
-        // detect it advancing (SP submitted a proof + called nextProvingPeriod).
-        const dataSetIds = [...new Set(result.copies.map((c) => c.dataSetId.toString()))]
+        // Snapshot each dataset's current nextChallengeEpoch for the watcher.
+        const dataSetIds = [...allCopyDataSets]
         const initialNextChallengeEpoch: Record<string, string> = {}
         for (const idStr of dataSetIds) {
           const epoch = await readNextChallengeEpoch(BigInt(idStr))
@@ -223,7 +302,8 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
           fileId,
           kind: 'commit_ok',
           payload: {
-            pieceCid: pieceCidStr,
+            chunkTotal,
+            totalBytes: totalSize,
             initialNextChallengeEpoch,
           },
         })
@@ -237,8 +317,6 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
               startedAt: Date.now(),
               initialNextChallengeEpoch,
             } satisfies WatchFirstProofJobData,
-            // Wait 5 min before first poll — first challenge epoch on a brand-new
-            // dataset is typically ~180 blocks (90 min) out, no point hammering early.
             { delay: 5 * 60_000, jobId: `watch:${fileId}:${Date.now()}` },
           )
         }

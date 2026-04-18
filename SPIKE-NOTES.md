@@ -102,3 +102,49 @@ filbucket/
 6. **Commit granularity.** I committed in big checkpoints (see git log) rather than per-file micro-commits. Happy to re-slice if you prefer a denser history on the feature branch.
 
 If I hit a blocker I couldn't route around, it would be here. I didn't hit one; this spike is ready for your hands.
+
+---
+
+## Path B — Streaming + chunked uploads (2026-04-18 21:45)
+
+The original scaffold buffered the whole file into a `Uint8Array` before
+`storage.upload`. That capped uploads at roughly 200 MiB / whatever RAM the
+worker has. Path B replaces that with:
+
+- **Chunked upload**: files > 200 MiB are split into ≤200 MiB pieces
+  (`MAX_PIECE_BYTES` in `durability.ts`). Each chunk is its own Synapse
+  `storage.upload()` call, which produces its own `file_pieces` rows (one per
+  copy per chunk).
+- **Streaming**: each chunk is pulled from MinIO via byte-range `Range` header
+  (`getObjectChunkStream`) and fed straight to Synapse as a Web `ReadableStream`
+  via `Readable.toWeb()`. The worker never buffers a full chunk in memory.
+- **Dataset reuse**: Synapse SDK's default provider-selection already picks the
+  same SP + dataset as prior pieces when metadata matches. Verified on a
+  300 MB test: both chunks landed in dataset 13175, so one payment rail per
+  file, not one per chunk. Good.
+- **Per-chunk progress**: worker's `callbacks.onProgress` emits `chunk_bytes`
+  commit events every 4 MiB (`PROGRESS_EVENT_STRIDE_BYTES`), with
+  `totalUploaded`/`totalBytes` so the UI can render a live bar.
+- **Browser upload progress**: `putObject()` switched from `fetch` to `XHR`
+  because `fetch` doesn't expose `upload.progress` in browsers. Same final
+  result, with a real progress bar.
+- **Retrieval URL persisted**: `file_pieces.retrieval_url` column populated
+  from Synapse's `CopyResult.retrievalUrl`. Needed for Phase 1 restore-from-cold.
+- **Schema**: `file_pieces` gained `chunk_index`, `chunk_total`, `retrieval_url`,
+  `role`. Enum `commit_event_kind` gained `chunk_started`, `chunk_bytes`,
+  `chunk_stored`, `chunk_committed` for debugging the upload pipeline.
+
+**Verified end-to-end on calibration:**
+- 10 MB file: single chunk, 2 SP copies, ~2 min to `commit_ok`.
+- 300 MB file: 2 chunks (200+100 MiB), 2 SP copies each = 4 `file_pieces` rows,
+  same dataset for both chunks, ~5 min total to `commit_ok`.
+
+**Open items left over for Phase 1:**
+- Download path is still direct-MinIO. For a multi-chunk file this already
+  works because MinIO serves the whole object. The *cold restore* path
+  (rehydrate from SP pieces when hot cache is evicted) has to stream chunks
+  back in byte-range order — not built yet.
+- Chunk-level retry: if chunk 2 of 3 fails, the whole file is marked `failed`.
+  Should become "retry just the missing chunks" in Phase 1.
+- Aggregation for < 1 MiB files into shared CAR bundles — separate from Path B.
+

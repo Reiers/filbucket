@@ -74,3 +74,29 @@ export async function getObjectStream(key: string): Promise<{ stream: Readable; 
     size: typeof res.ContentLength === 'number' ? res.ContentLength : -1,
   }
 }
+
+/**
+ * Stream a byte range [start..end] (inclusive) from an S3 object.
+ * Used by the chunked durability worker to feed Synapse one piece at a time
+ * without ever buffering the full file.
+ */
+export async function getObjectChunkStream(
+  key: string,
+  start: number,
+  end: number,
+): Promise<{ stream: Readable; size: number }> {
+  const res = await s3().send(
+    new GetObjectCommand({
+      Bucket: s3Bucket(),
+      Key: key,
+      Range: `bytes=${start}-${end}`,
+    }),
+  )
+  if (res.Body == null) {
+    throw new Error(`S3 object has no body: ${key} (range ${start}-${end})`)
+  }
+  return {
+    stream: res.Body as Readable,
+    size: typeof res.ContentLength === 'number' ? res.ContentLength : end - start + 1,
+  }
+}

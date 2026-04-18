@@ -41,7 +41,9 @@ function fileTypeIcon(mime: string, name: string): string {
 export default function HomePage() {
   const [files, setFiles] = useState<FileDTO[]>([])
   const [dragging, setDragging] = useState(false)
-  const [uploading, setUploading] = useState<string[]>([])
+  const [uploading, setUploading] = useState<
+    { name: string; uploaded: number; total: number }[]
+  >([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -67,7 +69,7 @@ export default function HomePage() {
   const upload = useCallback(
     async (file: File) => {
       if (!configOk) return
-      setUploading((s) => [...s, file.name])
+      setUploading((s) => [...s, { name: file.name, uploaded: 0, total: file.size }])
       setError(null)
       try {
         const init = await initUpload({
@@ -76,13 +78,17 @@ export default function HomePage() {
           mimeType: file.type || 'application/octet-stream',
           bucketId: DEFAULT_BUCKET_ID,
         })
-        await putObject(init.uploadUrl, file)
+        await putObject(init.uploadUrl, file, (uploaded, total) => {
+          setUploading((s) =>
+            s.map((u) => (u.name === file.name ? { ...u, uploaded, total } : u)),
+          )
+        })
         await completeUpload(init.fileId)
         await refresh()
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
       } finally {
-        setUploading((s) => s.filter((n) => n !== file.name))
+        setUploading((s) => s.filter((u) => u.name !== file.name))
       }
     },
     [configOk, refresh],
@@ -191,16 +197,28 @@ export default function HomePage() {
           />
         </div>
         {uploading.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-t border-line bg-paper/60 px-6 py-2.5">
-            {uploading.map((n) => (
-              <span
-                key={n}
-                className="inline-flex items-center gap-2 rounded-full bg-paper-raised px-2.5 py-0.5 font-mono text-[10px] text-ink-soft"
-              >
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                {n}
-              </span>
-            ))}
+          <div className="space-y-1.5 border-t border-line bg-paper/60 px-6 py-2.5">
+            {uploading.map((u) => {
+              const pct =
+                u.total > 0 ? Math.min(100, (u.uploaded / u.total) * 100) : 0
+              return (
+                <div key={u.name} className="flex items-center gap-3">
+                  <span className="h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-accent" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-soft">
+                    {u.name}
+                  </span>
+                  <span className="h-[3px] w-32 overflow-hidden rounded-full bg-line/50">
+                    <span
+                      className="block h-full bg-accent transition-all"
+                      style={{ width: `${pct.toFixed(1)}%` }}
+                    />
+                  </span>
+                  <span className="w-10 text-right font-mono text-[10px] text-ink-mute">
+                    {pct.toFixed(0)}%
+                  </span>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -234,7 +252,7 @@ export default function HomePage() {
               {files.map((f) => (
                 <li key={f.id}>
                   <div
-                    className={`group/row grid w-full grid-cols-[1fr_80px_110px_72px_28px] items-center gap-3 px-3 py-1 text-[13px] transition-colors hover:bg-paper ${
+                    className={`group/row relative grid w-full grid-cols-[1fr_80px_110px_72px_28px] items-center gap-3 px-3 py-1 text-[13px] transition-colors hover:bg-paper ${
                       selectedId === f.id ? 'bg-accent-soft/50' : ''
                     }`}
                   >
@@ -246,6 +264,22 @@ export default function HomePage() {
                       <span className="text-base leading-none">{fileTypeIcon(f.mimeType, f.name)}</span>
                       <span className="truncate text-ink">{f.name}</span>
                     </button>
+                    {f.progress != null && f.progress.totalBytes > 0 && (
+                      <span
+                        className="pointer-events-none absolute inset-x-3 bottom-0 h-[2px] overflow-hidden rounded-full bg-line/50"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className="block h-full bg-accent transition-all"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              (f.progress.totalUploaded / f.progress.totalBytes) * 100,
+                            ).toFixed(1)}%`,
+                          }}
+                        />
+                      </span>
+                    )}
                     <span className="text-right font-mono text-[11px] text-ink-mute">
                       {fmtBytes(f.sizeBytes)}
                     </span>
