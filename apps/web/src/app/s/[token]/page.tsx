@@ -166,7 +166,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
       {loading && (
         <div className="relative z-10 rounded-2xl border border-line bg-paper-raised px-6 py-10 text-center text-sm text-ink-mute">
-          Loading\u2026
+          Loading…
         </div>
       )}
 
@@ -202,9 +202,9 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
             </h1>
             <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-ink-mute">
               {fmtBytes(share.file.sizeBytes)}
-              {share.expiresAt != null ? ` \u00b7 ${fmtExpiry(share.expiresAt)}` : ''}
+              {share.expiresAt != null ? ` · ${fmtExpiry(share.expiresAt)}` : ''}
               {share.maxDownloads != null
-                ? ` \u00b7 ${share.downloadCount}/${share.maxDownloads} downloads used`
+                ? ` · ${share.downloadCount}/${share.maxDownloads} downloads used`
                 : ''}
             </p>
 
@@ -246,7 +246,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                     onClick={() => void doDownload()}
                     className="inline-flex items-center gap-2 self-start rounded-full bg-ink px-6 py-3 text-sm font-medium text-paper transition-all hover:-translate-y-0.5 hover:bg-accent-deep disabled:opacity-60 sm:self-auto"
                   >
-                    {downloading ? 'Starting download\u2026' : 'Download'}
+                    {downloading ? 'Starting download…' : 'Download'}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 3v14" />
                       <path d="m6 11 6 6 6-6" />
@@ -265,7 +265,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
           href="/"
           className="font-mono uppercase tracking-[0.22em] transition-colors hover:text-ink-soft"
         >
-          \u2190 filbucket
+          ← filbucket
         </a>
         <span className="inline-flex items-center gap-2 opacity-70">
           <span className="font-mono uppercase tracking-wider">Stored on</span>

@@ -33,6 +33,20 @@ export function BucketDropzone({
   // Window-level drag tracking. Drag events fire on descendants too, so count refs.
   const dragDepthRef = useRef(0)
 
+  // Dev-only: allow forcing a visual state via URL hash, so we can snap
+  // design screenshots of the drag/filling lid-open state without manually
+  // dragging. `#debug-drag` / `#debug-fill` toggle the corresponding state.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const sync = () => {
+      if (window.location.hash === '#debug-drag') setState('drag')
+      else if (window.location.hash === '#debug-fill') setState('filling')
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
   useEffect(() => {
     const onDragEnter = (e: DragEvent) => {
       if (!hasFiles(e.dataTransfer)) return
@@ -90,8 +104,8 @@ export function BucketDropzone({
       ? "Let go, we've got it."
       : state === 'filling'
         ? uploadingCount > 0
-          ? `Filling up\u2026 ${uploadingCount} file${uploadingCount === 1 ? '' : 's'} in flight`
-          : 'Filling up\u2026'
+          ? `Filling up… ${uploadingCount} file${uploadingCount === 1 ? '' : 's'} in flight`
+          : 'Filling up…'
         : 'Drop files in the bucket'
 
   const sub =
@@ -261,7 +275,7 @@ function BucketArt({
           lidOpen ? 'bucket-lid-float' : ''
         }`}
         style={{
-          top: lidOpen ? 2 : 34,
+          top: lidOpen ? 2 : 48,
           transform: lidOpen
             ? 'translateX(-50%) translate(-6px, -18px) rotate(-14deg)'
             : 'translateX(-50%) rotate(0deg)',
@@ -342,21 +356,21 @@ function BucketArt({
           fill="url(#body-grad)"
         />
 
-        {/* Mouth ellipse (dark void) */}
-        <ellipse cx="120" cy="66" rx="84" ry="11" fill="#0a1020" />
-
-        {/* Cyan rim highlight */}
-        <path
-          d="M38 64 Q 120 52, 202 64"
-          fill="none"
-          stroke="#a8daff"
-          strokeWidth="2"
-          opacity={lidOpen ? 0.9 : 0.7}
-        />
-
-        {/* Inner shadow suggests depth when lid is lifted */}
+        {/* Mouth ellipse (dark void) — only drawn when lid is lifted, so the
+            closed state has a smoothly-covered top without dark edge bleed. */}
         {lidOpen && (
-          <ellipse cx="120" cy="68" rx="74" ry="6.5" fill="#000" opacity="0.45" />
+          <>
+            <ellipse cx="120" cy="66" rx="84" ry="11" fill="#0a1020" />
+            <ellipse cx="120" cy="68" rx="74" ry="6.5" fill="#000" opacity="0.45" />
+            {/* Cyan rim highlight only visible when mouth is exposed */}
+            <path
+              d="M38 64 Q 120 52, 202 64"
+              fill="none"
+              stroke="#a8daff"
+              strokeWidth="2"
+              opacity="0.9"
+            />
+          </>
         )}
 
         {/* Italic 'f' glyph in negative space \u2014 same geometry as brand mark,

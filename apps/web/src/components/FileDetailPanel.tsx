@@ -170,7 +170,7 @@ export function FileDetailPanel({
                             {p.pieceCid}
                             <span className="text-ink-mute">
                               {' '}
-                              \u00b7 ds={p.datasetId ?? '-'} \u00b7 sp={p.spProviderId ?? '-'}
+                              · ds={p.datasetId ?? '-'} · sp={p.spProviderId ?? '-'}
                             </span>
                           </li>
                         ))}

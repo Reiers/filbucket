@@ -231,3 +231,144 @@ Scripts/compile_and_run.sh        # kill, package, launch
    in-flight section but there's no banner / toast / modal. A small global
    error sink + a "Retry" button on the failed row would close the loop.
 
+
+---
+
+## Phase 1 redesign (2026-04-18, late evening)
+
+Subagent run. The directive: take the Phase 0 "works but boring" web app and push
+it to premium / Awwwards-adjacent. What landed:
+
+### What was shipped
+
+- **Premium typography.** Replaced Instrument Serif + Inter + JetBrains Mono with
+  **Fraunces** (variable, SOFT + opsz axes wired in for the hero) + **Plus Jakarta
+  Sans** for body + JetBrains Mono for microlabels. Fraunces is doing the heavy
+  lifting on the hero line and on file-detail headers; its soft/opsz axes make the
+  italic feel hand-lettered instead of Google-Fonts-default.
+- **Interactive bucket dropzone** (`BucketDropzone.tsx`). Giant blue SVG that matches
+  the brand mark exactly (same Filecoin-blue gradient, same italic 'f' in negative
+  space). Three visual states: idle (breathe + shimmer), drag (lid lifts off + tilts,
+  dark mouth exposed, splash particles rise), filling (soft ping ripples + rotating
+  prompt copy). `dragenter/dragover/dragleave/drop` listeners attached to `window`
+  so a user can drop anywhere on the page and still get the bucket visual feedback.
+  Dev-only: `#debug-drag` / `#debug-fill` in the URL forces a state for screenshots.
+- **Folder upload.** Works via drag-drop (recursive
+  `DataTransferItemList.webkitGetAsEntry` walk) AND via a second button
+  `<input webkitdirectory>`. Relative paths are preserved.
+- **Real chunk-level progress** (`FileRow.tsx` + `useRollingRate.ts`). New row
+  layout: thumbnail | name (with optional folder-path prefix) | size | status chip +
+  microlabel | added | delete. A 2px progress line sits absolutely-positioned under
+  the whole row. Microlabel shows `"4.2MB / 10MB · 42% · 380KB/s"` with the bytes/sec
+  computed over a rolling 3-second window. During the server-side chunking phase the
+  bar goes indeterminate (sliding gradient) when no samples have arrived yet, then
+  becomes determinate once the server emits a `chunk_bytes` event.
+- **Inline previews** (`FilePreview.tsx` + `PreviewModal.tsx`). Image thumbnails
+  inline in the library rows. VIEW links open a full-screen modal with backdrop blur
+  + ESC to close. Native `<video>` / `<audio>` (MinIO's presigned URL supports Range,
+  so scrubbing Just Works). PDF first-page render via `pdfjs-dist` (lazy-imported,
+  worker pulled from the package URL). Text files: Range-request the first 4KB and
+  show first 20 lines monospace. Same preview component is reused on the share page
+  so recipients see the content before downloading.
+- **Share page redesign.** Soft radial gradient backdrop, the bucket mark sitting
+  faintly in the bottom-right as a watermark, preview inline above the filename,
+  Fraunces-set filename at `clamp(1.5rem, 3.5vw, 2.25rem)`. Password UI is still there
+  when needed. "Stored on Filecoin" footer microlabel unchanged.
+- **Copy audit.** All `Phase 0 · Calibration testnet` eng-strings gone. Footer
+  microlabel is now simply `Dev · Calibration` (bucket env marker). Only one Filecoin
+  mention remains, in the footer row next to the mark. No CIDs / rails / pieces /
+  wallets / epochs in user-facing copy.
+- **Motion hygiene.** All keyframes + transitions honor `prefers-reduced-motion`
+  via the global reset in `globals.css`.
+- **Empty state** for the Library: faded bucket mark + Fraunces italic "An empty
+  bucket, patiently waiting." + a friendly pointer to the Ready→Secured flow. No
+  stock-empty-state shrug guy.
+
+### Design decisions made on the fly
+
+- **Folder paths in `name`, not a new DB column.** The server already accepts
+  `filename` up to 512 chars via `UploadInitRequest`. Embedding the relative path
+  (`brand/2026/colors.txt`) directly in `name` avoids a schema migration + keeps
+  `FileDTO` unchanged. The UI splits on the last `/` so the folder prefix is rendered
+  as a monospace caption above the basename, flat-list-style. A proper `path` column
+  is a follow-up when folders become first-class groupable entities.
+- **Brand mark is now blue.** Nicklas had updated `filbucket-mark.svg` to a
+  Filecoin-blue silhouette with italic-'f' negative space sometime before this run.
+  The big `BucketArt` component was originally drawn in the old sienna palette;
+  I reshaped it to match the new brand (same gradient, same geometry) so the big
+  hero bucket reads as a scaled-up version of the small mark in the header.
+- **Fraunces over Clash Display / Migra.** Fraunces is on Google Fonts (OFL), ships
+  variable with SOFT + opsz axes, and plays nicely with `next/font`. Clash Display
+  and Migra would have pulled us off Google Fonts onto Fontshare/paid SaaS. Fraunces
+  hits "editorial / premium / hand-lettered" without the license headache.
+- **No framer-motion animations after all.** It's installed, but every motion I
+  needed ended up expressible as CSS keyframes + transition. Framer is still in the
+  deps for future interactions (scroll-triggered reveals, etc.) without re-adding.
+- **JSX escape bug.** Early iteration used `\u00b7` and `\u2026` as literal source
+  in JSX text nodes — which JSX renders verbatim instead of evaluating. Swept the
+  entire `apps/web/src` for those and replaced with actual Unicode chars (`·`, `…`,
+  `←`). Lesson: backslash-escapes only work in quoted strings / template literals,
+  not bare JSX text.
+
+### Stubbed / not done
+
+- **FilStream-level video streaming.** Phase 0 ships native `<video>` against the
+  hot-cache URL. Works great for MP4/WebM because MinIO supports Range. True HLS/DASH
+  transcoding (like the filstream repo does client-side via ffmpeg.wasm) is a Phase 2
+  follow-up if/when we care about sub-GB latency on 4K content. Noted in this file
+  because we may want it for the "durable large-file sharing" wedge.
+- **Share modal screenshot.** Couldn't get a two-step automated click sequence
+  through capture-website, so `09-share-modal.png` is intentionally missing from
+  design-previews. The modal itself has been polished (Fraunces on the filename +
+  stronger drop shadow) and builds clean.
+- **Upload error UX.** If a user drops 40 files and two fail, there's still only a
+  thin red banner at the top of the page. Failed rows show in the library but have
+  no "Retry" affordance yet. Follow-up.
+- **Concurrency cap on bulk drops.** Currently hardcoded to 3 parallel uploads for
+  folder drops (in `page.tsx::onFiles`). That's a taste decision; an adaptive cap
+  based on connection speed would be nicer later.
+
+### Build status
+
+- `pnpm -r typecheck` → clean
+- `pnpm -r build` → clean, web bundle 126 kB First Load JS on `/`, 105 kB on `/s/[token]`
+- Hot-reload worked for all edits except when I nuked `.next/` mid-session (don't do
+  that — took a full `next dev` restart to recover).
+
+### Design previews
+
+Dropped into `design-previews/`:
+- `01-home-idle.png` — hero + bucket + library empty-state (earlier render, has a
+  u00b7 bug I later fixed)
+- `02-library-mixed.png` — populated library with folder path, mixed file states
+  (READY, SECURED, FAILED), image thumbnails, VIEW links
+- `03-library-files.png` — above-the-fold only
+- `04-share-page.png` — what a recipient sees; image preview + big filename
+- `05-home-after-lid-fix.png` — post-layout fix, clean idle bucket
+- `06-home-final.png` — final idle state
+- `07-preview-image.png` — full-screen image preview modal with backdrop blur
+- `08-bucket-drag.png` — **the signature moment**: lid lifted, mouth open, splash
+  particles, "Let go, we've got it." copy
+
+### Self-critique
+
+Two rounds via the vision tool. Final verdict from the critic on the drag state:
+> "Polished, thoughtful UX with a playful microinteraction that enhances usability
+> rather than distracting from it — the lid animation provides clear affordance
+> feedback during the exact moment users need reassurance."
+
+Verdict: the lid-off interaction is the signature moment we were after. Not a gimmick.
+
+### Top 3 follow-ups
+
+1. **Proper folder grouping.** Right now folder paths live in the filename and the
+   library is flat. Group rows by common folder prefix into collapsible sections
+   (e.g. a `brand/2026/*` group), with an aggregate size + status rollup. Adds a
+   real `path` column to `files`.
+2. **Upload error surface.** Failed rows need a "Retry" button wired to re-run init
+   + PUT + complete with the same `File` handle (keep the File alive in a ref). Plus
+   a toast stack for transient network errors instead of one shared banner.
+3. **Smart video preview.** For now native `<video>` is fine. When a user uploads a
+   4K MOV, though, we should either transcode to H.264/VP9 server-side on ingest or
+   use ffmpeg.wasm on the share page to do HLS chunks client-side (filstream model).
+   This is the obvious Phase 2 win for the WeTransfer-killer wedge.

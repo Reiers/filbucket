@@ -144,12 +144,12 @@ export default function HomePage() {
             style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
           >
             Your files,{' '}
-            <span
-              className="italic text-accent"
+            <em
+              className="not-italic text-accent"
               style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
             >
               kept safe
-            </span>{' '}
+            </em>{' '}
             in the background.
           </h1>
           <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-ink-soft">
@@ -188,7 +188,7 @@ export default function HomePage() {
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-soft">
                 {u.displayName}
               </span>
-              <span className="font-mono text-[10px] text-ink-mute">starting\u2026</span>
+              <span className="font-mono text-[10px] text-ink-mute">starting…</span>
             </div>
           ))}
         </div>
@@ -198,7 +198,7 @@ export default function HomePage() {
       <section>
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-            Library \u00b7 {files.length} {files.length === 1 ? 'item' : 'items'}
+            Library · {files.length} {files.length === 1 ? 'item' : 'items'}
           </h2>
         </div>
 
@@ -232,7 +232,7 @@ export default function HomePage() {
                         const verb =
                           f.state === 'failed'
                             ? 'Dismiss this failed upload?'
-                            : `Delete \u201c${f.name}\u201d?`
+                            : `Delete “${f.name}”?`
                         if (!window.confirm(verb)) return
                         try {
                           await deleteFile(f.id)
@@ -257,7 +257,7 @@ export default function HomePage() {
           className="font-mono uppercase tracking-[0.22em]"
           title="Internal dev environment, running on Filecoin calibration testnet."
         >
-          Dev \u00b7 Calibration
+          Dev · Calibration
         </p>
         <a
           href="#"

@@ -47,7 +47,7 @@ export function PreviewModal({
             </p>
             <p className="truncate font-serif text-xl text-paper">{name}</p>
             <p className="font-mono text-[11px] text-paper/60">
-              {fmtBytes(sizeBytes)} \u00b7 {mimeType || 'file'}
+              {fmtBytes(sizeBytes)} · {mimeType || 'file'}
             </p>
           </div>
           <button
@@ -55,7 +55,7 @@ export function PreviewModal({
             onClick={onClose}
             className="rounded-full border border-paper/20 bg-paper/10 px-3 py-1 text-sm text-paper transition-colors hover:bg-paper/20"
           >
-            Close \u00b7 Esc
+            Close · Esc
           </button>
         </div>
         <div className="overflow-hidden rounded-2xl bg-paper shadow-[0_40px_80px_rgba(0,0,0,0.4)]">

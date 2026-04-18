@@ -41,7 +41,7 @@ export function FileRow({
       const p = Math.min(100, (up / localTotal) * 100)
       return {
         pct: p,
-        label: `${fmtBytesShort(up)} / ${fmtBytesShort(localTotal)} \u00b7 ${Math.round(p)}%`,
+        label: `${fmtBytesShort(up)} / ${fmtBytesShort(localTotal)} · ${Math.round(p)}%`,
         phase: 'local' as const,
       }
     }
@@ -49,7 +49,7 @@ export function FileRow({
       const p = Math.min(100, (file.progress.totalUploaded / file.progress.totalBytes) * 100)
       return {
         pct: p,
-        label: `${fmtBytesShort(file.progress.totalUploaded)} / ${fmtBytesShort(file.progress.totalBytes)} \u00b7 ${Math.round(p)}%`,
+        label: `${fmtBytesShort(file.progress.totalUploaded)} / ${fmtBytesShort(file.progress.totalBytes)} · ${Math.round(p)}%`,
         phase: 'server' as const,
       }
     }
@@ -127,7 +127,7 @@ export function FileRow({
         {showProgress && (
           <span className="truncate font-mono text-[10px] text-ink-mute">
             {label}
-            {rate > 0 ? ` \u00b7 ${fmtRate(rate)}` : ''}
+            {rate > 0 ? ` · ${fmtRate(rate)}` : ''}
           </span>
         )}
       </div>

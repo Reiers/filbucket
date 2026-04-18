@@ -140,7 +140,7 @@ function PdfFirstPage({ src, rounded }: { src: string; rounded: string }) {
     >
       {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-ink-mute">
-          Rendering preview\u2026
+          Rendering preview…
         </div>
       )}
       {error && (
@@ -203,7 +203,7 @@ function TextPreview({ src, rounded }: { src: string; rounded: string }) {
       className="max-h-[420px] overflow-auto bg-paper-sunken px-5 py-4 font-mono text-[12px] leading-relaxed text-ink-soft"
       style={{ borderRadius: rounded }}
     >
-      {content ?? 'Loading\u2026'}
+      {content ?? 'Loading…'}
     </pre>
   )
 }
