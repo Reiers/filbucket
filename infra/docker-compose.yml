@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: filbucket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: filbucket
+      POSTGRES_PASSWORD: filbucket
+      POSTGRES_DB: filbucket
+    ports:
+      - "5432:5432"
+    volumes:
+      - filbucket_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filbucket -d filbucket"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: filbucket-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - filbucket_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: filbucket-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: filbucket
+      MINIO_ROOT_PASSWORD: filbucketsecret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - filbucket_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: filbucket-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 filbucket filbucketsecret &&
+      mc mb --ignore-existing local/filbucket-hot &&
+      echo 'MinIO bucket filbucket-hot ready'
+      "
+
+volumes:
+  filbucket_pg:
+  filbucket_redis:
+  filbucket_minio:
