@@ -6,11 +6,13 @@
   <p><strong>Dropbox for Filecoin.</strong> Upload, store, and share files with verifiable durability — without ever seeing a wallet, a CID, or a rail.</p>
 
   <p>
-    <a href="https://docs.filbucket.ai"><img src="https://img.shields.io/badge/docs-read-1a1817?style=flat-square" alt="docs" /></a>
-    <a href="#quickstart"><img src="https://img.shields.io/badge/status-phase%201-0072e5?style=flat-square" alt="phase 1" /></a>
-    <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-1a1817?style=flat-square" alt="license" /></a>
+    <a href="#quickstart"><img src="https://img.shields.io/badge/install-curl%20%7C%20bash-0072e5?style=flat-square" alt="installer" /></a>
+    <a href="./docs/README.md"><img src="https://img.shields.io/badge/docs-read-1a1817?style=flat-square" alt="docs" /></a>
+    <a href="#status"><img src="https://img.shields.io/badge/status-phase%201-0072e5?style=flat-square" alt="phase 1" /></a>
+    <a href="#license"><img src="https://img.shields.io/badge/license-MIT-1a1817?style=flat-square" alt="license" /></a>
     <a href="#architecture"><img src="https://img.shields.io/badge/chain-calibration-3ca7ff?style=flat-square" alt="calibration" /></a>
     <img src="https://img.shields.io/github/last-commit/Reiers/filbucket?style=flat-square&color=1a1817" alt="last commit" />
+    <img src="https://img.shields.io/github/stars/Reiers/filbucket?style=flat-square&color=b84918" alt="stars" />
   </p>
 </div>
 
@@ -69,10 +71,12 @@ Most Filecoin products expose the plumbing. FilBucket wins by doing the opposite
 ### One-line installer (macOS)
 
 ```bash
-curl -fsSL https://get.filbucket.ai | bash
+curl -fsSL https://raw.githubusercontent.com/Reiers/filbucket/main/install.sh | bash
 ```
 
-Sets up Postgres + Redis + MinIO via Homebrew, clones the repo into `~/FilBucket`, generates an ops wallet, runs migrations, and tells you how to fund the wallet + boot the stack. Safe by default, idempotent, `FILBUCKET_YES=1` for non-interactive.
+Sets up Postgres + Redis + MinIO via Homebrew, clones the repo into `~/FilBucket`, generates an ops wallet, opens both faucets in your browser (~10 seconds of clicking), polls until funded, then auto-runs `setup-wallet`. Safe by default, idempotent, `FILBUCKET_YES=1` for non-interactive.
+
+When `get.filbucket.ai` is live, the URL becomes `curl -fsSL https://get.filbucket.ai | bash`.
 
 <details>
 <summary>What the installer does</summary>
@@ -225,9 +229,9 @@ Unit economics: **$2.50/TiB/mo/copy** (FOC list price) × 2 copies + CDN + ops �
 
 ## Documentation
 
-📚 **[docs.filbucket.ai](https://docs.filbucket.ai)** — full user + developer docs on GitBook.
+📚 **In-repo docs** under [`docs/`](./docs/) — GitBook-ready (Git Sync via `.gitbook.yaml`); **`docs.filbucket.ai`** publishes once we wire the GitBook side.
 
-In-repo:
+Key reads:
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — product + infra design
 - [GLOSSARY.md](./GLOSSARY.md) — internal vocabulary, UI-facing language rules
 - [SPIKE-NOTES.md](./SPIKE-NOTES.md) — dev journal with real findings (Synapse SDK quirks, chain gotchas, decisions)

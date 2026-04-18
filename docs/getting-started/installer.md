@@ -5,10 +5,14 @@ description: The one-liner. Paste, answer a few prompts, go.
 # One-line installer
 
 ```bash
-curl -fsSL https://get.filbucket.ai | bash
+curl -fsSL https://raw.githubusercontent.com/Reiers/filbucket/main/install.sh | bash
 ```
 
 That's it. Five-ish minutes from nothing to a fully-local FilBucket on macOS.
+
+{% hint style="info" %}
+When `get.filbucket.ai` is live, you'll be able to use `curl -fsSL https://get.filbucket.ai | bash`. Until then, the GitHub raw URL above is the canonical one.
+{% endhint %}
 
 ## What it does
 
