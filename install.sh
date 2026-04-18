@@ -744,36 +744,63 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/dev.log"
 PID_FILE="$LOG_DIR/dev.pid"
 
-# If an old dev run is already alive, leave it alone.
-if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
-  ok "Dev stack already running (PID $(cat "$PID_FILE"))"
-else
-  step "Starting the dev stack in the background"
-  # macOS bash 3 is strict about backgrounded nohup via subshell + redirection;
-  # use setsid-equivalent via 'nohup … &' then 'disown'.
-  (
-    cd "$INSTALL_DIR"
-    nohup pnpm dev > "$LOG_FILE" 2>&1 &
-    echo $! > "$PID_FILE"
-    disown $!
-  )
-  ok "Launched (log: $LOG_FILE)"
-  info "  Waiting for web :3010 to respond…"
-  READY=0
-  for i in {1..60}; do
-    if curl -sf http://localhost:3010 >/dev/null 2>&1; then READY=1; break; fi
-    sleep 1
-  done
-  if [[ "$READY" == "1" ]]; then
-    ok "Web is up at ${BLUE}http://localhost:3010${RESET}"
-    # Open the browser tab automatically on macOS.
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-      open http://localhost:3010 2>/dev/null || true
-    fi
-  else
-    warn "Web didn't respond in 60s. Check $LOG_FILE."
-    info "  Or start it yourself: cd $INSTALL_DIR && pnpm dev"
+# Double-check the web env vars exist in .env; Next.js crashes in silence
+# if NEXT_PUBLIC_DEV_USER_ID or NEXT_PUBLIC_DEFAULT_BUCKET_ID are missing.
+WEB_ENV_OK=1
+for v in NEXT_PUBLIC_DEV_USER_ID NEXT_PUBLIC_DEFAULT_BUCKET_ID NEXT_PUBLIC_API_URL; do
+  if ! grep -q "^$v=[^[:space:]].*" "$ENV_FILE" 2>/dev/null; then
+    warn "$v missing from .env — web will compile but show an empty library."
+    WEB_ENV_OK=0
   fi
+done
+[[ "$WEB_ENV_OK" == "1" ]] && ok "Web env vars look good"
+
+# Kill any stale pnpm-dev / next-dev / tsx-watch from prior installer attempts.
+# This is the #1 source of port :3010 / :4000 conflicts.
+if lsof -nP -iTCP:3010 -sTCP:LISTEN 2>/dev/null | grep -q node; then
+  warn "Something's already on :3010 — killing it first"
+  lsof -nP -iTCP:3010 -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+  sleep 1
+fi
+if lsof -nP -iTCP:4000 -sTCP:LISTEN 2>/dev/null | grep -q node; then
+  warn "Something's already on :4000 — killing it first"
+  lsof -nP -iTCP:4000 -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+  sleep 1
+fi
+
+step "Starting the dev stack in the background"
+# macOS default ulimit -n is 256 which Next.js watcher blows through immediately.
+# Bump to 10240 for the child process.
+(
+  ulimit -n 10240 2>/dev/null || true
+  cd "$INSTALL_DIR"
+  nohup pnpm dev > "$LOG_FILE" 2>&1 &
+  echo $! > "$PID_FILE"
+  disown $! 2>/dev/null || true
+)
+ok "Launched (log: $LOG_FILE)"
+info "  Waiting for web :3010 to respond (up to 90s)…"
+READY=0
+for i in {1..90}; do
+  if curl -sf http://localhost:3010 >/dev/null 2>&1; then READY=1; break; fi
+  # Early-exit if the process died.
+  if [[ -f "$PID_FILE" ]] && ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+if [[ "$READY" == "1" ]]; then
+  ok "Web is up at ${BLUE}http://localhost:3010${RESET}"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    open http://localhost:3010 2>/dev/null || true
+  fi
+else
+  warn "Web didn't respond. Last 30 lines of the log:"
+  echo
+  tail -30 "$LOG_FILE" 2>/dev/null | sed 's/^/    /'
+  echo
+  info "  Full log:  tail -f $LOG_FILE"
+  info "  Retry:     cd $INSTALL_DIR && pnpm dev"
 fi
 
 cat <<EOF
