@@ -23,9 +23,12 @@ When `get.filbucket.ai` is live, you'll be able to use `curl -fsSL https://get.f
 5. **Creates the MinIO bucket** `filbucket-hot` with the dev credentials `filbucket / filbucketsecret`.
 6. **Clones the repo** to `~/FilBucket` (or `$FILBUCKET_INSTALL_DIR`).
 7. **`pnpm install`** the workspace.
-8. **Offers to generate a fresh Filecoin calibration wallet.** Writes the PK to `.env` with chmod 600. Prints the address + faucet links.
-9. **Runs Drizzle migrations** and seeds the dev user + default bucket.
-10. **Prints the final commands**: fund the wallet, run `setup-wallet`, `pnpm dev`.
+8. **Offers to generate a fresh Filecoin calibration wallet.** Writes the PK to `.env` with chmod 600. Prints the address.
+9. **Opens the tFIL faucet in your browser** with the address copied to your clipboard. Polls the chain until tFIL lands.
+10. **Walks you through minting USDFC via the Trove app** ([stg.usdfc.net](https://stg.usdfc.net)). There is no plain USDFC drip faucet — you collateralize tFIL to borrow USDFC. Polls until USDFC lands.
+11. **Runs Drizzle migrations** and seeds the dev user + default bucket.
+12. **Auto-runs `setup-wallet`** (USDFC deposit into Filecoin Pay + FWSS operator approval).
+13. **Prints the final command**: `pnpm dev`.
 
 ## Safety
 

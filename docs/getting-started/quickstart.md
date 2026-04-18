@@ -32,10 +32,19 @@ node -e "require('viem/accounts').privateKeyToAccount(process.env.PK).address" \
 
 Fund it:
 
-- **tFIL**: [faucet.calibnet.chainsafe-fil.io](https://faucet.calibnet.chainsafe-fil.io/funds.html)
-- **USDFC**: [forest-explorer.chainsafe.dev/faucet/calibnet\_usdfc](https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc)
+1. **tFIL**: [faucet.calibnet.chainsafe-fil.io](https://faucet.calibnet.chainsafe-fil.io/funds.html). Paste your address, click Send Funds. You get 100 tFIL.
+2. **USDFC**: there is no plain USDFC drip faucet. The official path is to mint USDFC by collateralizing tFIL via the Trove app at [stg.usdfc.net](https://stg.usdfc.net):
+   - Connect a wallet (or import the PK you generated above into MetaMask).
+   - Click “Trove” → “Open Trove”.
+   - Deposit ~5 tFIL as collateral.
+   - Borrow at least 5 USDFC (covers FilBucket Phase 0 dev with headroom).
+   - Confirm the transaction.
 
-You need about 10 tFIL for gas and 10 USDFC for the rail. The faucets hand out more than enough.
+You need ~10 tFIL for gas + the Trove collateral, and ~5–10 USDFC for the storage rail. Both faucets are intentionally rate-limited but normally hands-free in a real browser.
+
+{% hint style="info" %}
+The installer streamlines all of the above. See [installer](installer.md).
+{% endhint %}
 
 ## 2 · Clone and install
 

@@ -55,9 +55,89 @@ ask()   {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
-# Poll calibration balances for an address until both tFIL > 0 and USDFC > 0.
-# Uses the project's own viem from apps/server's node_modules so we don't
-# drag in a separate dep. Times out after 10 minutes by default.
+# Read just the tFIL balance.
+read_fil() {
+  ( cd "$INSTALL_DIR/apps/server" && node -e "
+    const { createPublicClient, http, formatEther } = require('viem');
+    const { filecoinCalibration } = require('viem/chains');
+    const c = createPublicClient({ chain: filecoinCalibration, transport: http('https://api.calibration.node.glif.io/rpc/v1') });
+    c.getBalance({ address: process.argv[1] }).then(b => console.log(formatEther(b))).catch(() => console.log('0'));
+  " "$1" 2>/dev/null )
+}
+
+read_usdfc() {
+  ( cd "$INSTALL_DIR/apps/server" && node -e "
+    const { createPublicClient, http, formatUnits } = require('viem');
+    const { filecoinCalibration } = require('viem/chains');
+    const c = createPublicClient({ chain: filecoinCalibration, transport: http('https://api.calibration.node.glif.io/rpc/v1') });
+    const USDFC = '0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0';
+    c.readContract({ address: USDFC, abi: [{ name:'balanceOf', type:'function', stateMutability:'view', inputs:[{name:'a',type:'address'}], outputs:[{type:'uint256'}] }], functionName:'balanceOf', args:[process.argv[1]] }).then(b => console.log(formatUnits(b, 18))).catch(() => console.log('0'));
+  " "$1" 2>/dev/null )
+}
+
+# Poll for tFIL only (after the chainsafe faucet step).
+poll_tfil() {
+  local addr="$1"
+  local timeout="${FILBUCKET_FAUCET_TIMEOUT:-600}"
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+  local start=$(date +%s)
+  local i=0
+  trap 'printf "\n"; trap - INT; return 130' INT
+  while true; do
+    local elapsed=$(( $(date +%s) - start ))
+    (( elapsed > timeout )) && { printf "\n"; warn "Timed out after ${timeout}s."; trap - INT; return 1; }
+    if (( elapsed % 10 == 0 )) || (( i == 0 )); then
+      local bal
+      bal=$(read_fil "$addr")
+      [[ "$bal" =~ ^[0-9]+\.[0-9]{0,4} ]] && bal="${BASH_REMATCH[0]}"
+      bal=$(printf '%s' "$bal" | sed -E 's/0+$//; s/\.$//')
+      [[ -z "$bal" ]] && bal="0"
+      if [[ "$bal" != "0" ]]; then
+        printf "\n"
+        ok "tFIL landed! $bal tFIL"
+        trap - INT
+        return 0
+      fi
+    fi
+    printf "\r  ${BLUE}%s${RESET} waiting on tFIL  ${RED}·${RESET} ${BOLD}%s${RESET}  ${DIM}(%ss)${RESET}    " \
+      "${frames[$((i % 10))]}" "${bal:-0}" "$elapsed"
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
+# Poll for USDFC only (after the user mints via Trove).
+poll_usdfc() {
+  local addr="$1"
+  local timeout="${FILBUCKET_FAUCET_TIMEOUT:-900}"
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+  local start=$(date +%s)
+  local i=0
+  trap 'printf "\n"; trap - INT; return 130' INT
+  while true; do
+    local elapsed=$(( $(date +%s) - start ))
+    (( elapsed > timeout )) && { printf "\n"; warn "Timed out after ${timeout}s."; trap - INT; return 1; }
+    if (( elapsed % 10 == 0 )) || (( i == 0 )); then
+      local bal
+      bal=$(read_usdfc "$addr")
+      [[ "$bal" =~ ^[0-9]+\.[0-9]{0,4} ]] && bal="${BASH_REMATCH[0]}"
+      bal=$(printf '%s' "$bal" | sed -E 's/0+$//; s/\.$//')
+      [[ -z "$bal" ]] && bal="0"
+      if [[ "$bal" != "0" ]]; then
+        printf "\n"
+        ok "USDFC landed! $bal USDFC"
+        trap - INT
+        return 0
+      fi
+    fi
+    printf "\r  ${BLUE}%s${RESET} waiting on USDFC  ${RED}·${RESET} ${BOLD}%s${RESET}  ${DIM}(%ss)${RESET}    " \
+      "${frames[$((i % 10))]}" "${bal:-0}" "$elapsed"
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
+# Legacy combined poller — kept for backward compat but unused in main flow now.
 poll_balances() {
   local addr="$1"
   local timeout="${FILBUCKET_FAUCET_TIMEOUT:-600}"
@@ -389,37 +469,52 @@ else
     # step — there's no human to click submit, so polling would just hang. Print
     # the funding instructions and continue.
     if [[ "${FILBUCKET_YES:-}" == "1" ]]; then
-      warn "Non-interactive mode — skipping faucet flow."
+      warn "Non-interactive mode — skipping wallet funding."
       info "  Fund manually then run setup-wallet:"
-      info "  tFIL  →  https://faucet.calibnet.chainsafe-fil.io/funds.html"
-      info "  USDFC →  https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc"
+      info "  1. Get tFIL: https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  2. Mint USDFC by collateralizing tFIL: https://stg.usdfc.net"
+      info "     (Connect wallet w/ PK below → Trove → deposit ~5 tFIL → borrow ~10 USDFC)"
       info "  Address: ${BOLD}$OPS_ADDR${RESET}"
-    elif ask "Open faucets in browser and wait for funding?" y; then
+    elif ask "Open faucet in browser and wait for tFIL funding?" y; then
       # Put the address on the clipboard so the user only has to ⌘V it.
       if command -v pbcopy >/dev/null 2>&1; then
         printf '%s' "$OPS_ADDR" | pbcopy
         ok "Address copied to clipboard."
       fi
       open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
-      sleep 2
-      open "https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc" 2>/dev/null || true
-      info "  Two browser tabs opened. In each: ⌘V → click submit."
-      info "  Polling chain every 10s. Ctrl-C to skip and finish later."
+      info "  Browser opened. ⌘V to paste address → click Send Funds."
+      info "  Polling chain every 10s for tFIL. Ctrl-C to skip."
       echo
-      if poll_balances "$OPS_ADDR"; then
-        # Wallet is funded — chain it into setup-wallet so the user can boot dev right away.
+      if poll_tfil "$OPS_ADDR"; then
         echo
-        step "Running setup-wallet"
-        ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ) && \
-          ok "Ops wallet is approved + ready for uploads"
-        WALLET_READY=1
+        warn "Now you need USDFC. The chainsafe USDFC drip faucet has been"
+        warn "deprecated; the official path is to mint USDFC via the Trove app:"
+        info "  Open: ${BOLD}${BLUE}https://stg.usdfc.net${RESET}"
+        info "  1. Connect a wallet (or import this PK into MetaMask: see .env)"
+        info "  2. Go to Trove → Open Trove → deposit ~5 tFIL as collateral"
+        info "  3. Borrow at least 5 USDFC (covers FilBucket Phase 0 dev)"
+        echo
+        if ask "Open the Trove app now?" y; then
+          open "https://stg.usdfc.net" 2>/dev/null || true
+        fi
+        info "  Polling chain every 10s for USDFC. Ctrl-C to skip + finish later."
+        if poll_usdfc "$OPS_ADDR"; then
+          # Both balances landed — run setup-wallet automatically.
+          echo
+          step "Running setup-wallet"
+          ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ) && \
+            ok "Ops wallet is approved + ready for uploads"
+          WALLET_READY=1
+        else
+          warn "USDFC polling cancelled."
+        fi
       else
-        warn "Polling cancelled."
+        warn "tFIL polling cancelled."
       fi
     else
       warn "Skipping. Fund manually before first upload:"
-      info "  tFIL  →  https://faucet.calibnet.chainsafe-fil.io/funds.html"
-      info "  USDFC →  https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc"
+      info "  1. tFIL: https://faucet.calibnet.chainsafe-fil.io/funds.html"
+      info "  2. USDFC: open Trove at https://stg.usdfc.net, deposit tFIL collateral"
     fi
     echo
     info "Then run:  ${BOLD}cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet${RESET}"
