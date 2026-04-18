@@ -2,7 +2,10 @@ import { CommitError, StoreError } from '@filoz/synapse-sdk'
 import { WarmStorageService } from '@filoz/synapse-sdk/warm-storage'
 import { type Job, Worker } from 'bullmq'
 import { eq } from 'drizzle-orm'
+import { createPublicClient, http as viemHttp } from 'viem'
+import { filecoinCalibration } from 'viem/chains'
 import { synapse } from '../chain/synapse.js'
+import { env } from '../env.js'
 import { db } from '../db/client.js'
 import { commitEvents, datasetRails, filePieces, files } from '../db/schema.js'
 import {
@@ -36,6 +39,50 @@ async function collectBytes(source: AsyncIterable<Buffer | Uint8Array>): Promise
     offset += c.byteLength
   }
   return out
+}
+
+// PDPVerifier proxy on calibration. Used for reading challenge-epoch state directly
+// because FWSS view's provenThisPeriod() reverts on freshly-created datasets.
+const PDP_VERIFIER_CALIBRATION = '0x85e366Cf9DD2c0aE37E963d9556F5f4718d6417C' as const
+const PDP_VERIFIER_ABI = [
+  {
+    name: 'getNextChallengeEpoch',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'id', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    name: 'dataSetLive',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'id', type: 'uint256' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
+let readClient: ReturnType<typeof createPublicClient> | null = null
+function chainReader(): ReturnType<typeof createPublicClient> {
+  if (readClient != null) return readClient
+  readClient = createPublicClient({
+    chain: filecoinCalibration,
+    transport: viemHttp(env().FILBUCKET_RPC_URL),
+  })
+  return readClient
+}
+
+async function readNextChallengeEpoch(dataSetId: bigint): Promise<bigint | null> {
+  try {
+    const v = (await chainReader().readContract({
+      address: PDP_VERIFIER_CALIBRATION,
+      abi: PDP_VERIFIER_ABI,
+      functionName: 'getNextChallengeEpoch',
+      args: [dataSetId],
+    })) as bigint
+    return v
+  } catch {
+    return null
+  }
 }
 
 async function markFailed(fileId: string, reason: string, detail: unknown): Promise<void> {
@@ -161,16 +208,26 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
           }
         }
 
+        // Note: we intentionally DO NOT change file.state here. It stays hot_ready until first proof.
+
+        // 5. Snapshot each dataset's current nextChallengeEpoch so the watcher can
+        // detect it advancing (SP submitted a proof + called nextProvingPeriod).
+        const dataSetIds = [...new Set(result.copies.map((c) => c.dataSetId.toString()))]
+        const initialNextChallengeEpoch: Record<string, string> = {}
+        for (const idStr of dataSetIds) {
+          const epoch = await readNextChallengeEpoch(BigInt(idStr))
+          if (epoch != null) initialNextChallengeEpoch[idStr] = epoch.toString()
+        }
+
         await db().insert(commitEvents).values({
           fileId,
           kind: 'commit_ok',
-          payload: { pieceCid: pieceCidStr },
+          payload: {
+            pieceCid: pieceCidStr,
+            initialNextChallengeEpoch,
+          },
         })
 
-        // Note: we intentionally DO NOT change file.state here. It stays hot_ready until first proof.
-
-        // 5. Schedule the first-proof watcher (delayed 60s).
-        const dataSetIds = [...new Set(result.copies.map((c) => c.dataSetId.toString()))]
         if (dataSetIds.length > 0) {
           await watchFirstProofQ().add(
             'watch-first-proof',
@@ -178,8 +235,11 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
               fileId,
               dataSetIds,
               startedAt: Date.now(),
+              initialNextChallengeEpoch,
             } satisfies WatchFirstProofJobData,
-            { delay: 60_000, jobId: `watch:${fileId}:${Date.now()}` },
+            // Wait 5 min before first poll — first challenge epoch on a brand-new
+            // dataset is typically ~180 blocks (90 min) out, no point hammering early.
+            { delay: 5 * 60_000, jobId: `watch:${fileId}:${Date.now()}` },
           )
         }
       } catch (err) {
@@ -202,13 +262,13 @@ export function createDurabilityWorker(): Worker<DurabilityJobData> {
 
 export function createWatchFirstProofWorker(): Worker<WatchFirstProofJobData> {
   const MAX_AGE_MS = 6 * 60 * 60 * 1000 // 6h hard ceiling
-  const REPOLL_DELAY_MS = 60_000 // 1 min between polls
-  const BACKOFF_AFTER_FIRST_WINDOW_MS = 30 * 60_000 // 30 min reenqueues after initial 30m window
+  const REPOLL_DELAY_MS = 2 * 60_000 // 2 min between polls (calibration epoch = 30s)
+  const BACKOFF_AFTER_FIRST_WINDOW_MS = 10 * 60_000 // 10 min reenqueues after initial proving window
 
   return new Worker<WatchFirstProofJobData>(
     WATCH_FIRST_PROOF_QUEUE,
     async (job: Job<WatchFirstProofJobData>) => {
-      const { fileId, dataSetIds, startedAt } = job.data
+      const { fileId, dataSetIds, startedAt, initialNextChallengeEpoch } = job.data
       const age = Date.now() - startedAt
 
       if (age > MAX_AGE_MS) {
@@ -222,52 +282,63 @@ export function createWatchFirstProofWorker(): Worker<WatchFirstProofJobData> {
         return
       }
 
-      const s = synapse()
+      // Signal: nextChallengeEpoch has advanced past the value we snapshotted at
+      // commit time. That means the SP submitted a proof + called nextProvingPeriod.
+      // Falls back to "epoch became non-zero" if we couldn't snapshot initially.
+      let proofLandedOn: string | null = null
+      let proofLandedInitial: string | null = null
+      let proofLandedNow: string | null = null
 
-      // Query proven-this-period via viem client for each dataset. If ANY dataset has
-      // proven_this_period=true we consider the file "Secured".
-      // (Phase 0: we fire on first proof of any copy. Phase 1 tightens to all copies.)
       for (const idStr of dataSetIds) {
-        try {
-          const dataSetId = BigInt(idStr)
-          // Contract view: provenThisPeriod(dataSetId) -> bool on the fwssView contract.
-          const proven = await s.client.readContract({
-            address: s.chain.contracts.fwssView.address,
-            abi: s.chain.contracts.fwssView.abi,
-            functionName: 'provenThisPeriod',
-            args: [dataSetId],
-          })
-          if (proven === true) {
-            await db()
-              .update(files)
-              .set({ state: 'pdp_committed', updatedAt: new Date() })
-              .where(eq(files.id, fileId))
-            await db()
-              .insert(commitEvents)
-              .values({
-                fileId,
-                kind: 'first_proof_ok',
-                payload: { dataSetId: idStr, ageMs: age },
-              })
-            return
+        const dataSetId = BigInt(idStr)
+        const current = await readNextChallengeEpoch(dataSetId)
+        if (current == null) continue // chain unreachable or dataset reverted — retry next poll
+
+        const initialStr = initialNextChallengeEpoch?.[idStr]
+        if (initialStr != null) {
+          // Normal path: compare against snapshot.
+          const initial = BigInt(initialStr)
+          if (current > initial) {
+            proofLandedOn = idStr
+            proofLandedInitial = initialStr
+            proofLandedNow = current.toString()
+            break
           }
-        } catch (err) {
-          // Swallow per-dataset errors; we will retry next poll.
-          await db()
-            .insert(commitEvents)
-            .values({
-              fileId,
-              kind: 'fault',
-              payload: { reason: 'proof_check_failed', dataSetId: idStr, detail: String(err) },
-            })
+        } else if (current > 0n) {
+          // Fallback path for legacy jobs that didn't snapshot: any non-zero is
+          // "there is at least a scheduled challenge", not proof of delivery, but
+          // best we can do.
+          proofLandedOn = idStr
+          proofLandedNow = current.toString()
+          break
         }
       }
 
-      // Not proven yet — re-enqueue.
+      if (proofLandedOn != null) {
+        await db()
+          .update(files)
+          .set({ state: 'pdp_committed', updatedAt: new Date() })
+          .where(eq(files.id, fileId))
+        await db()
+          .insert(commitEvents)
+          .values({
+            fileId,
+            kind: 'first_proof_ok',
+            payload: {
+              dataSetId: proofLandedOn,
+              initialNextChallengeEpoch: proofLandedInitial,
+              currentNextChallengeEpoch: proofLandedNow,
+              ageMs: age,
+            },
+          })
+        return
+      }
+
+      // Not yet — re-enqueue.
       const delay = age < 30 * 60_000 ? REPOLL_DELAY_MS : BACKOFF_AFTER_FIRST_WINDOW_MS
       await watchFirstProofQ().add(
         'watch-first-proof',
-        { fileId, dataSetIds, startedAt },
+        { fileId, dataSetIds, startedAt, initialNextChallengeEpoch },
         { delay, jobId: `watch:${fileId}:${Date.now()}` },
       )
     },

@@ -12,6 +12,10 @@ export interface WatchFirstProofJobData {
   fileId: string
   dataSetIds: string[] // stringified bigints
   startedAt: number // epoch ms of first enqueue
+  // Initial nextChallengeEpoch per dataset captured at commit time.
+  // We consider a proof landed when the dataset's nextChallengeEpoch has advanced
+  // past this initial value (the SP called nextProvingPeriod after submitting a proof).
+  initialNextChallengeEpoch?: Record<string, string> // dataSetId -> bigint as string
 }
 
 let durabilityQueue: Queue<DurabilityJobData> | null = null
