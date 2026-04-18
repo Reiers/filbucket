@@ -427,14 +427,70 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
     EX_USDFC_HUMAN="${EX_USDFC%.*}"
     info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
     if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "$EX_USDFC_HUMAN" == "0" ]]; then
-      warn "Wallet exists but isn't fully funded yet."
+      warn "Wallet exists but isn't fully funded yet — finishing the funding now."
+
+      # Try the FilBucket faucet first if BOTH are missing (clean fresh wallet).
+      # Single drip covers tFIL + USDFC.
+      if [[ "$EX_FIL_HUMAN" == "0" ]] && [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+        echo
+        step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
+        FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
+        info "  Hitting $FAUCET_URL/drip…"
+        DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
+          -H 'content-type: application/json' \
+          -d "{\"address\":\"$EXISTING_ADDR\"}" 2>&1)"
+        DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
+        if [[ -n "$DRIP_OK" ]]; then
+          ok "Faucet drip sent. Both txs broadcast."
+          info "  Waiting for confirmation (~30-60s on calibration)…"
+          sleep 30
+          poll_tfil "$EXISTING_ADDR" 60 || true
+          poll_usdfc "$EXISTING_ADDR" 60 || true
+        else
+          warn "Faucet unavailable. Response: $DRIP_RESP"
+        fi
+      fi
+
+      # Re-read balances after the drip attempt.
+      EX_FIL="$(read_fil "$EXISTING_ADDR")"
+      EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
+      EX_FIL_HUMAN="${EX_FIL%.*}"
+      EX_USDFC_HUMAN="${EX_USDFC%.*}"
+
+      # If we still need tFIL, the user has to do the faucet click — the
+      # FilBucket faucet won't drip again to the same address.
       if [[ "$EX_FIL_HUMAN" == "0" ]]; then
-        info "  1. Get tFIL: paste $EXISTING_ADDR at https://faucet.calibnet.chainsafe-fil.io/funds.html"
+        echo
+        warn "Still no tFIL. Open the chainsafe faucet manually:"
+        if command -v pbcopy >/dev/null 2>&1; then
+          printf '%s' "$EXISTING_ADDR" | pbcopy
+          ok "  Address copied to clipboard."
+        fi
+        open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
+        info "  ⌘V → click Send Funds. Polling chain every 10s."
+        poll_tfil "$EXISTING_ADDR" || true
+        EX_FIL="$(read_fil "$EXISTING_ADDR")"
+        EX_FIL_HUMAN="${EX_FIL%.*}"
       fi
-      if [[ "$EX_USDFC_HUMAN" == "0" ]]; then
-        info "  2. Mint USDFC: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+
+      # If we have tFIL but no USDFC, mint via Trove.
+      if [[ "$EX_FIL_HUMAN" != "0" ]] && [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+        echo
+        step "Minting USDFC via Trove (collateralizes ~150 tFIL)"
+        if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
+          ok "USDFC minted"
+        else
+          warn "USDFC mint failed. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
+        fi
       fi
-      info "  3. Approve FWSS: cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
+
+      # And finally, approve FWSS.
+      echo
+      step "Running setup-wallet (Filecoin Pay + FWSS approval)"
+      if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
+        ok "Ops wallet approved + ready for uploads"
+        WALLET_READY=1
+      fi
     fi
   fi
 else
