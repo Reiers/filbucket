@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-label="FilBucket">
+  <defs>
+    <!-- Filecoin blue — official -->
+    <linearGradient id="fb-blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3ca7ff"/>
+      <stop offset="100%" stop-color="#0072e5"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    Concept: the bucket IS the Filecoin blue. Silhouette only, no shading.
+    The bucket's mouth is a dark ellipse — the "hole" you drop files into —
+    and it contains a white 'f' glyph in negative space. Tight, geometric,
+    single mark. No stickers. No clip-art.
+  -->
+
+  <!-- Handle: solid stroke, matches bucket body color -->
+  <path d="M16 18 C 16 4, 48 4, 48 18"
+        fill="none"
+        stroke="url(#fb-blue)"
+        stroke-width="3"
+        stroke-linecap="round"/>
+
+  <!-- Bucket body (pail profile) filled in Filecoin blue. Slight taper. -->
+  <path d="M10.5 18 H 53.5 L 49.5 57 Q 49 59 47 59 H 17 Q 15 59 14.5 57 Z"
+        fill="url(#fb-blue)"/>
+
+  <!-- Bucket mouth: dark ellipse cut into the top. Creates depth without shading. -->
+  <ellipse cx="32" cy="18" rx="21.5" ry="3.5" fill="#0a1020"/>
+
+  <!-- Thin cyan rim highlight along the top curve, for definition at small sizes -->
+  <path d="M11.5 17.5 Q 32 12.5, 52.5 17.5"
+        fill="none" stroke="#a8daff" stroke-width="0.8" stroke-opacity="0.7"/>
+
+  <!--
+    Italic Filecoin 'f' on the bucket body, negative-space in paper-white.
+    Built from 3 geometric paths: top bar + curved descender + midline crossbar.
+    Must read as 'f' not 'J' at any size — the crossbar is load-bearing.
+  -->
+  <g transform="translate(34 39.5)" fill="#fbf9f4">
+    <!-- Top horizontal bar of 'f' (extends left of the vertical stroke) -->
+    <path d="M -2.5 -7.5 C -0.3 -7.5 1.6 -6 2.1 -3.9 L 5.5 -3.9 L 5.1 -2 L 1.9 -2 C 1.5 -3.5 0.5 -4.4 -0.9 -4.4 L -2 -4.4 Z"/>
+    <!-- Vertical descender of italic 'f': slight slope, curves into tail -->
+    <path d="M -2 -4.4 L -5.8 9.2 C -6.2 10.6 -7.1 11.5 -8.3 11.5 L -10.2 11.5 L -10.2 9.5 L -9.1 9.5 C -8.6 9.5 -8.3 9.2 -8.1 8.6 L -4 -4.4 Z"/>
+    <!-- Crossbar — load-bearing stroke. Thicker + longer to survive 16–32px. -->
+    <path d="M -5.4 0.5 L 4 0.5 L 3.5 3 L -5.9 3 Z"/>
+  </g>
+</svg>

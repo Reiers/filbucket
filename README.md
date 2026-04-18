@@ -1,206 +1,248 @@
-# FilBucket
+<div align="center">
+  <img src="apps/web/public/brand/filbucket-mark.svg" alt="FilBucket" width="96" height="96" />
 
-Dropbox-style file storage on Filecoin.
+  <h1>FilBucket</h1>
 
-## Vision
+  <p><strong>Dropbox for Filecoin.</strong> Upload, store, and share files with verifiable durability — without ever seeing a wallet, a CID, or a rail.</p>
 
-FilBucket should feel like a normal, beautiful file product.
-Not a crypto tool.
-Not a protocol dashboard.
-Not a pile of Web3 jargon.
-
-The promise is simple:
-
-**Upload, store, and share files simply, with Filecoin-grade durability underneath.**
-
-Users should never need to think about:
-- CIDs
-- storage deals
-- wallets
-- miners
-- retrieval markets
-- on-chain anything
-
-Those details belong inside the product, not in the user experience.
-
-## Product Thesis
-
-Most Filecoin products expose the plumbing.
-That is why normal users do not adopt them.
-
-FilBucket wins by doing the opposite:
-- instant-feeling uploads
-- human language for file state
-- beautiful sharing
-- calm, trustworthy UX
-- Filecoin under the hood, invisible by default
-
-This is not "access to Filecoin" as a product.
-This is a real file-storage product powered by Filecoin.
-
-## MVP
-
-### Core user flows
-- Upload files with drag-and-drop
-- Organize files into folders or buckets
-- Preview and download files
-- Generate share links
-- Control privacy, expiry, and optional password protection
-
-### Reliability layer
-- Hot storage / cache for immediate availability
-- Background durability pipeline into Filecoin
-- Human-readable file states:
-  - Uploading
-  - Ready
-  - Secured
-  - Archived
-  - Restoring
-
-### Authentication
-- Email login
-- Social login later if useful
-- No wallet required
-
-## UX Principles
-
-### 1. Feel immediate
-Uploads should feel done immediately, even if deeper durability work continues in the background.
-
-### 2. Hide protocol complexity
-No raw infrastructure language in the primary interface.
-
-### 3. Make sharing delightful
-A great share-link flow is table stakes.
-
-### 4. Earn trust quietly
-Show durability and integrity in plain language, not chain theater.
-
-### 5. Be boring in the right way
-This should feel more like Dropbox or Backblaze than a Web3 project.
-
-## Positioning
-
-### User-facing
-- Simple file storage
-- Durable backup
-- Easy file sharing
-
-### Infrastructure truth
-- Filecoin-backed durability
-- Retrieval acceleration via cache layer
-- Optional future S3/API surface
-
-## What FilBucket is not
-- not a token product
-- not a wallet product
-- not an NFT file vault
-- not a protocol explorer
-- not a crypto-native UX experiment
-
-## Possible wedge
-
-Start with one sharp use case:
-- large file sharing
-- long-term archive storage
-- dataset storage
-- team dropbox for durable files
-
-"Dropbox for Filecoin" is useful shorthand, but the actual wedge should be narrower and stronger.
-
-## Near-Term Build Plan
-
-1. Define the exact first wedge
-2. Design the information architecture
-3. Design the file-state model and storage pipeline
-4. Build a simple upload + library + share-link MVP
-5. Add Filecoin durability behind the scenes
-6. Polish until it feels calm and obvious
-
-## Initial concept
-
-FilBucket should be:
-- more normal than web3 products
-- more trustworthy than hacker projects
-- more elegant than infra dashboards
-
-If it feels like crypto, it loses.
-If it feels like a clean file product that quietly uses Filecoin well, it has a shot.
+  <p>
+    <a href="https://docs.filbucket.ai"><img src="https://img.shields.io/badge/docs-read-1a1817?style=flat-square" alt="docs" /></a>
+    <a href="#quickstart"><img src="https://img.shields.io/badge/status-phase%201-0072e5?style=flat-square" alt="phase 1" /></a>
+    <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-1a1817?style=flat-square" alt="license" /></a>
+    <a href="#architecture"><img src="https://img.shields.io/badge/chain-calibration-3ca7ff?style=flat-square" alt="calibration" /></a>
+    <img src="https://img.shields.io/github/last-commit/Reiers/filbucket?style=flat-square&color=1a1817" alt="last commit" />
+  </p>
+</div>
 
 ---
 
-## Running locally (Phase 0 dev spike)
+FilBucket is a file product that happens to use Filecoin. It runs on [**Filecoin Onchain Cloud**](https://docs.filecoin.io/basics/how-filecoin-works/filecoin-onchain-cloud) (PDP, Filecoin Pay, FWSS) through the [**Synapse SDK**](https://github.com/FilOzone/synapse-sdk), but the user never needs to know that.
 
-> Phase 0 targets **Filecoin calibration testnet only**. The server refuses to
-> start against any other chain. See `ARCHITECTURE.md §13` for locked defaults.
+> **Upload a file.** It lands instantly in hot storage.
+> **Wait a few minutes.** It gets replicated across multiple storage providers and cryptographically proven on-chain.
+> **Share a link.** Anyone can download — no wallet, no login, no jargon.
+
+---
+
+## Why FilBucket
+
+Most Filecoin products expose the plumbing. FilBucket wins by doing the opposite:
+
+- 📦 **Real product, not a dashboard.** If it feels like crypto, it loses.
+- ⚡ **Instant uploads.** Hot cache first; durability happens in the background.
+- 🔐 **Verifiable by default.** Every file is replicated across 2+ SPs with continuous PDP proofs.
+- 💸 **Fiat billing, USDFC underneath.** Users never hold crypto.
+- 🔗 **Beautiful sharing.** Signed links with expiry, password, download limits.
+- 🍎 **Native Mac app.** Drag, drop, done.
+- 📁 **Folders, streaming, previews.** Image, video, PDF, audio — inline.
+
+---
+
+## Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%"><img src="design-previews/home.png" alt="Home" /><br/><sub><b>Home</b> — drop files into the bucket, watch them secure in the background.</sub></td>
+      <td width="50%"><img src="design-previews/share.png" alt="Share page" /><br/><sub><b>Share page</b> — what a recipient sees. No wallet, no login, no Web3 language.</sub></td>
+    </tr>
+    <tr>
+      <td><img src="design-previews/library.png" alt="Library" /><br/><sub><b>Library</b> — live progress bars, real state transitions, previews.</sub></td>
+      <td><img src="design-previews/macos-app.png" alt="macOS app" /><br/><sub><b>macOS app</b> — native drag-and-drop, system tray.</sub></td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## Quickstart
 
 ### Prerequisites
-- Node 22
-- pnpm 10
-- Docker (for Postgres + Redis + MinIO)
 
-### 1. Install + start infra
+- **Node 22+** and **pnpm 10**
+- **Postgres 16**, **Redis 7**, **MinIO** (via Homebrew on macOS, or Docker elsewhere)
+- **Filecoin calibration wallet** with tFIL + USDFC ([tFIL faucet](https://faucet.calibnet.chainsafe-fil.io/funds.html), [USDFC faucet](https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc))
+
+### Run locally
+
 ```bash
+git clone https://github.com/Reiers/filbucket.git
+cd filbucket
 pnpm install
-docker compose -f infra/docker-compose.yml up -d
-```
-That brings up:
-- Postgres 16 on `:5432` (user `filbucket`/`filbucket`, db `filbucket`)
-- Redis 7 on `:6379`
-- MinIO on `:9000` (console on `:9001`) with bucket `filbucket-hot` pre-created
 
-### 2. Copy env + migrate the DB
-```bash
-cp .env.example .env
-pnpm --filter @filbucket/server db:push
-```
+# Start Postgres + Redis + MinIO (macOS / Homebrew)
+brew services start postgresql@16
+brew services start redis
+minio server ~/minio-data --address :9000 --console-address :9001 &
 
-### 3. Seed a dev user + default bucket
-```bash
-pnpm --filter @filbucket/server db:seed
-```
-Copy the printed `DEV_USER_ID` and `NEXT_PUBLIC_DEFAULT_BUCKET_ID` into `.env`
-(also mirror `NEXT_PUBLIC_DEV_USER_ID=<same>` and `NEXT_PUBLIC_API_URL=http://localhost:4000`
-so the web app can reach the server). The web package reads `NEXT_PUBLIC_*` at build time.
+# Initialize DB
+createdb -U $USER filbucket
+pnpm --filter @filbucket/server db:push --force
+pnpm --filter @filbucket/server db:seed   # prints DEV_USER_ID + bucket id
 
-### 4. Fund the ops wallet on calibration
-You need tFIL (for gas) and USDFC (for rail payments).
-1. Generate a private key and set `FILBUCKET_OPS_PK=0x...` in `.env`.
-2. Grab tFIL: https://faucet.calibnet.chainsafe-fil.io/funds.html
-3. Grab USDFC: https://forest-explorer.chainsafe.dev/faucet/calibnet_usdfc
-   (see also https://docs.secured.finance/usdfc-stablecoin/getting-started/getting-test-usdfc-on-testnet)
+# Create .env at repo root with:
+#   FILBUCKET_OPS_PK=0x<your funded calibration PK>
+#   FILBUCKET_CHAIN=calibration
+#   FILBUCKET_RPC_URL=https://api.calibration.node.glif.io/rpc/v1
+#   DEV_USER_ID=<paste from seed>
+#   NEXT_PUBLIC_DEV_USER_ID=<same as above>
+#   NEXT_PUBLIC_DEFAULT_BUCKET_ID=<paste from seed>
+# …and the standard DATABASE_URL / REDIS_URL / S3_* entries (see .env.example)
 
-### 5. Deposit USDFC + approve FWSS as operator
-```bash
+# One-shot wallet setup (deposits USDFC into Filecoin Pay + approves FWSS)
 pnpm --filter @filbucket/server setup-wallet
-```
-Idempotent. Prints balances + approval state. Safe to re-run.
 
-### 6. Run it
+# Dev
+pnpm dev    # web on :3010, api on :4000
+```
+
+Open **http://localhost:3010**, drop a file into the bucket, watch it go `Uploading → Ready → Secured`.
+
+### macOS app
+
 ```bash
-pnpm dev
+cd apps/mac
+./Scripts/compile_and_run.sh
 ```
-- Web at http://localhost:3000
-- Server at http://localhost:4000
-- Health check: `curl localhost:4000/healthz`
 
-Drop a file in the dropzone. States progress **Uploading → Ready → Secured** as
-the durability worker commits to Filecoin and the first proof is recorded.
+Builds a signed `.app` bundle and launches it. Point it at your local server via the Settings sheet if the defaults don't match.
 
-### Phase 0 shortcuts (explicitly not production)
-- **Auth**: a single seeded dev user; requests must carry `X-Dev-User: <DEV_USER_ID>`. Phase 1 replaces this with email magic-link.
-- **Downloads**: `/api/files/:id/download` 302s straight to MinIO. The real cold-tier restore pipeline is Phase 1.
-- **Retries**: the durability worker does NOT retry on `StoreError`/`CommitError`; the file flips to `failed` and we log. Phase 1 adds a proper retry policy.
-- **Aggregation**: small-file CAR bundling is Phase 2.
+---
 
-### Contract addresses (calibration)
-| Contract         | Address                                    |
-|------------------|--------------------------------------------|
-| PDPVerifier      | `0x85e366Cf9DD2c0aE37E963d9556F5f4718d6417C` |
-| FWSS (proxy)     | `0x02925630df557F957f70E112bA06e50965417CA0` |
-| USDFC            | `0xb3042734b608a1B16e9e86B374A3f3e389B4cDf0` |
-| ServiceProviderRegistry | resolved via Synapse SDK `calibration` chain object |
+## Architecture
 
-RPC: `https://api.calibration.node.glif.io/rpc/v1`. Chain id: `314159`.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FilBucket UI                             │
+│    Next.js 15 web · Native macOS arm64 · S3-compat API (soon)   │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+┌───────────────────────────────▼─────────────────────────────────┐
+│                      FilBucket Backend                          │
+│         Fastify · Postgres · Redis · BullMQ · MinIO             │
+│                                                                 │
+│   Upload  ─►  Hot cache  ─►  Durability worker  ─►  PDP watcher │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │ Synapse SDK (viem)
+┌───────────────────────────────▼─────────────────────────────────┐
+│                Filecoin Onchain Cloud (shared)                  │
+│                                                                 │
+│   PDPVerifier   FilecoinPay   FWSS   ServiceProviderRegistry    │
+│                                                                 │
+│   Curio SPs (selected via endorsed set, multi-copy by default)  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-See `SPIKE-NOTES.md` for what is real vs stubbed and known gotchas.
+- **No SP**: FilBucket consumes FOC; we don't run storage providers.
+- **No user wallets**: FilBucket is the payer on every rail. Users pay fiat (or nothing, on free tier).
+- **No new contracts**: we use FWSS + Filecoin Pay + PDPVerifier as-is.
+
+Full design: [`ARCHITECTURE.md`](./ARCHITECTURE.md). Internal vocabulary + UI translation table: [`GLOSSARY.md`](./GLOSSARY.md).
+
+---
+
+## Features
+
+| | |
+|---|---|
+| 📤 **Instant uploads** | Hot cache landing in seconds, durability async |
+| 🪣 **Interactive bucket** | Drag files onto an animated SVG bucket |
+| 📁 **Folder uploads** | Drag a folder, preserve structure |
+| 🎞 **Inline previews** | Images, video (with scrubbing), audio, PDF, text |
+| 📊 **Live progress** | Per-chunk, per-SP progress events streaming into the UI |
+| 🔗 **Share links** | Expiry presets, password, download limits, revoke |
+| 🗑 **Delete & dismiss** | Every file, every state |
+| 🍎 **macOS native** | SwiftUI drag-drop, AVKit previews, menu bar (coming) |
+| 🔐 **Audited access log** | Every share view/download recorded |
+| 🧾 **Verifiable durability** | PDP proofs every proving period, rail repair on fault |
+
+---
+
+## Repo layout
+
+```
+filbucket/
+├── apps/
+│   ├── web/            Next.js 15 frontend
+│   ├── server/         Fastify API + BullMQ workers
+│   └── mac/            Native macOS SwiftUI app
+├── packages/
+│   └── shared/         TS types + zod schemas
+├── infra/
+│   └── docker-compose.yml
+├── ARCHITECTURE.md     Full design
+├── GLOSSARY.md         Internal terms + UI translation rules
+├── SPIKE-NOTES.md      Phase 0/1 dev journal
+└── TODO.md             Execution queue
+```
+
+---
+
+## Pricing (target)
+
+| Tier | Storage | Price |
+|---|---|---|
+| Free | 10 GB | $0 |
+| Personal | 500 GB | $10 / mo |
+| Team | 2 TB | $25 / mo |
+
+Unit economics: **$2.50/TiB/mo/copy** (FOC list price) × 2 copies + CDN + ops ≈ 60% gross margin at $10/500 GB.
+
+---
+
+## Documentation
+
+📚 **[docs.filbucket.ai](https://docs.filbucket.ai)** — full user + developer docs on GitBook.
+
+In-repo:
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — product + infra design
+- [GLOSSARY.md](./GLOSSARY.md) — internal vocabulary, UI-facing language rules
+- [SPIKE-NOTES.md](./SPIKE-NOTES.md) — dev journal with real findings (Synapse SDK quirks, chain gotchas, decisions)
+- [TODO.md](./TODO.md) — what's next
+
+---
+
+## Stack
+
+**Web**
+Next.js 15 · React 19 · Tailwind 3 · Framer Motion · Instrument Serif + General Sans + TX-02 Mono
+
+**Backend**
+Node 22 · TypeScript · Fastify · Drizzle ORM · Postgres 16 · BullMQ · Redis 7 · MinIO (S3-compat)
+
+**Chain**
+`@filoz/synapse-sdk` · `@filoz/synapse-core` · `viem` · `argon2` · Calibration testnet (Phase 0), mainnet soon
+
+**macOS**
+SwiftUI · SwiftPM (no Xcode project) · AVKit · PDFKit
+
+---
+
+## Contributing
+
+FilBucket is developed in the open. PRs welcome once the API stabilizes in Phase 1. For now:
+
+- File issues with reproduction steps
+- Suggest features via GitHub discussions
+- Follow [@filbucket](https://x.com/filbucket) for updates
+
+---
+
+## Status
+
+**Phase 0 (done)** — Scaffold, calibration upload, PDP commit, first-proof watcher, share links.
+**Phase 1 (shipping)** — Premium redesign, folder uploads, previews, native Mac app, real auth.
+**Phase 2** — Filecoin mainnet, Stripe billing, mobile web polish, aggregation for small files.
+**Phase 3** — Team buckets, S3-compatible API, Private Vault (user-held keys), iOS app.
+
+See [ARCHITECTURE §11](./ARCHITECTURE.md#11-roadmap) for the full roadmap.
+
+---
+
+## License
+
+MIT © 2026 FilBucket · Built on [Filecoin](https://filecoin.io).
+
+<div align="center">
+  <sub>Files stay safe because <img src="apps/web/public/brand/filecoin.svg" width="12" height="12" alt="" /> Filecoin never forgets.</sub>
+</div>
