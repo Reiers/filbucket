@@ -45,12 +45,17 @@ info()  { printf "  ${DIM}%s${RESET}\n" "$*"; }
 ask()   {
   local prompt="$1" default="${2:-y}" answer
   if [[ "${FILBUCKET_YES:-}" == "1" ]]; then return 0; fi
+  # If we have no controlling TTY (e.g. `curl | bash` in some shells, or piped
+  # stdin from a script), fall back to the default rather than dying.
+  if [[ ! -r /dev/tty ]]; then
+    [[ "$default" == "y" ]] && return 0 || return 1
+  fi
   if [[ "$default" == "y" ]]; then
     printf "  ${CYAN}?${RESET} %s ${DIM}[Y/n]${RESET} " "$prompt"
   else
     printf "  ${CYAN}?${RESET} %s ${DIM}[y/N]${RESET} " "$prompt"
   fi
-  read -r answer </dev/tty
+  read -r answer </dev/tty 2>/dev/null || answer=""
   answer="${answer:-$default}"
   [[ "$answer" =~ ^[Yy]$ ]]
 }
@@ -410,7 +415,24 @@ step "Ops wallet"
 ENV_FILE="$INSTALL_DIR/.env"
 
 if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"; then
-  ok ".env exists with an ops wallet"
+  EXISTING_ADDR="$(grep '^FILBUCKET_OPS_ADDRESS=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')"
+  ok ".env exists with an ops wallet (${EXISTING_ADDR:-address not stored})"
+
+  # Even if the wallet's there, check whether it's funded + approved. If yes,
+  # nothing to do. If no, walk the user through the funding flow.
+  if [[ -n "$EXISTING_ADDR" ]]; then
+    EX_FIL="$(read_fil "$EXISTING_ADDR")"
+    EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
+    EX_FIL_HUMAN="${EX_FIL%.*}"
+    EX_USDFC_HUMAN="${EX_USDFC%.*}"
+    info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
+    if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+      warn "Wallet exists but isn't fully funded yet."
+      info "  Fund + setup it manually with:"
+      info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
+      info "  See docs: https://github.com/Reiers/filbucket/blob/main/docs/getting-started/installer.md"
+    fi
+  fi
 else
   info "FilBucket needs a Filecoin calibration wallet (tFIL + USDFC)."
   info "We can generate one now; you'll fund it from the calibration faucets."
