@@ -447,6 +447,22 @@ spinner "Installing workspace dependencies" pnpm install --silent
 step "Ops wallet"
 
 ENV_FILE="$INSTALL_DIR/.env"
+WEB_ENV_FILE="$INSTALL_DIR/apps/web/.env.local"
+
+# Mirror the workspace .env into apps/web/.env.local so Next.js sees
+# NEXT_PUBLIC_* vars (it only reads .env* files in the package's own cwd).
+# Symlink keeps a single source of truth.
+link_web_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    # If the link target moved or it's a stale regular file, replace it.
+    if [[ -L "$WEB_ENV_FILE" ]]; then
+      rm -f "$WEB_ENV_FILE"
+    elif [[ -f "$WEB_ENV_FILE" ]]; then
+      mv "$WEB_ENV_FILE" "$WEB_ENV_FILE.bak.$$" 2>/dev/null || true
+    fi
+    ln -s "$ENV_FILE" "$WEB_ENV_FILE" 2>/dev/null || cp "$ENV_FILE" "$WEB_ENV_FILE"
+  fi
+}
 
 if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"; then
   EXISTING_ADDR="$(grep '^FILBUCKET_OPS_ADDRESS=' "$ENV_FILE" | cut -d= -f2 | tr -d '[:space:]')"
@@ -785,6 +801,10 @@ LOG_DIR="$HOME/.filbucket"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/dev.log"
 PID_FILE="$LOG_DIR/dev.pid"
+
+# Mirror .env into apps/web/.env.local right before boot so Next.js
+# can actually see the NEXT_PUBLIC_* vars at compile time.
+link_web_env
 
 # Double-check the web env vars exist in .env; Next.js crashes in silence
 # if NEXT_PUBLIC_DEV_USER_ID or NEXT_PUBLIC_DEFAULT_BUCKET_ID are missing.
