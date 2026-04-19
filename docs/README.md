@@ -1,5 +1,5 @@
 ---
-description: Dropbox for Filecoin. Upload, share, done.
+description: Your bucket, in the cloud. Drop files, share them, sleep well.
 cover: .gitbook/assets/cover.png
 coverY: 0
 layout:
@@ -22,9 +22,9 @@ layout:
 
 **FilBucket is a file product that happens to use Filecoin.**
 
-Upload anything. It lands instantly. In the background, it gets replicated across multiple storage providers and continuously proven on-chain. Share it with a signed link that expires when you want it to.
+Drop anything. It lands instantly. In the background, it gets replicated across multiple storage providers and continuously proven on-chain. Share it with a signed link that expires when you want it to.
 
-Nobody in your team ever needs to see a wallet, a CID, or a storage provider.
+Nobody on your team ever needs to see a wallet, a CID, or a storage provider.
 
 ## Start here
 
@@ -34,6 +34,10 @@ New to FilBucket? The [quickstart](getting-started/quickstart.md) takes 5 minute
 
 {% content-ref url="getting-started/overview.md" %}
 [Product overview](getting-started/overview.md)
+{% endcontent-ref %}
+
+{% content-ref url="getting-started/installer.md" %}
+[One-line installer](getting-started/installer.md)
 {% endcontent-ref %}
 
 {% content-ref url="getting-started/quickstart.md" %}
@@ -52,7 +56,8 @@ Most Filecoin products look and feel like protocol dashboards. FilBucket is not 
 - **Verifiable storage** across ≥2 storage providers with continuous PDP proofs.
 - **Beautiful sharing** with expiry, password, and download limits.
 - **No wallets for users** — FilBucket is the payer on every payment rail.
-- **Native Mac app** + web + S3-compatible API (soon).
+- **Native Mac app**, web, S3-compatible API (soon).
+- **Light + dark** — full theme system with system-preference detection.
 
 ## What Filecoin gives us
 
@@ -60,10 +65,14 @@ FilBucket is built on [Filecoin Onchain Cloud (FOC)](https://docs.filecoin.io/ba
 
 - **PDP** — Proof of Data Possession. Storage providers continuously prove they still hold the bytes.
 - **Filecoin Pay** — Streaming USDFC payment rails.
-- **FWSS** — Warm storage business logic that glues PDP + Pay together.
+- **FWSS** — Warm-storage business logic that glues PDP + Pay together.
 - **Synapse SDK** — Our single integration point.
 
-We don't run storage providers, we don't write new Solidity, we don't build a token. We just make the user-facing product feel as good as Dropbox.
+We don't run storage providers. We don't write new Solidity. We don't build a token. We just make the user-facing product feel as good as Dropbox.
+
+## What's new
+
+- **2026-04-19** — iCloud-style UI overhaul (light + dark mode), one-line installer, custom faucet service. Phase 1 shipped; **Phase 2 (mainnet migration) starts now.** See the [changelog](operations/changelog.md) for every meaningful change and the [roadmap](operations/roadmap.md) for what's next.
 
 ## Next steps
 

@@ -271,35 +271,51 @@ The DB-backup-to-Filecoin trick is important: it means "if everything we run bur
 
 ## 11. Roadmap
 
-### Phase 0 — Dev spike (2 weeks)
-- `pnpm create` a Next.js app in `filbucket/web`
-- Backend scaffold in `filbucket/server` (Node + Fastify + Postgres + BullMQ + Caddy)
-- Integrate Synapse SDK against **calibration testnet** (`chainId 314159`, USDFC faucet)
-- Upload → hot cache → one-copy PDP commit → first proof confirmed. End-to-end, ugly UI.
+> Detailed version with dates: [`docs/operations/roadmap.md`](./docs/operations/roadmap.md).
 
-### Phase 1 — MVP ugly-but-complete (4–6 weeks)
-- Auth (email magic link)
-- Buckets + folders + files
-- Drag-and-drop upload with resumable multipart
-- Five file states live in UI
-- Share links with expiry + password
-- Stripe billing, $0 free tier, $10/mo paid tier
-- Two-copy durability on calibration
+### Phase 0 — Dev spike ✅ (done 2026-04-18)
+- Next.js 15 web + Fastify server scaffold
+- Synapse SDK integrated against calibration (`chainId 314159`)
+- Upload → hot cache → PDP commit → first proof watcher
+- Share links with expiry + password + revocation
+- Ops wallet funded, FWSS operator approved
 
-### Phase 2 — Mainnet private beta (4 weeks)
-- Move rails to Filecoin mainnet
-- Real USDFC top-up pipeline (Coinbase / Circle)
-- Aggregation for small files
-- FilBeam CDN wired in
-- Client-side encryption default-on
-- Restore flow polished
+### Phase 1 — Premium product ✅ (done 2026-04-19)
+- Streaming chunked uploads, per-SP progress events
+- Folder uploads, inline previews (image/video/audio/PDF/text/markdown)
+- iCloud-style UI overhaul: custom logo + wordmark, Inter + IBM Plex Mono, pastel palette, rounded tiles, spring easings, ⌘K search, full dark mode
+- Sidebar nav with real routes (`/recents`, `/shared`, `/trash` ship as themed coming-soon pages)
+- Native macOS arm64 app (SwiftUI + SwiftPM, AVKit + PDFKit)
+- One-line installer (`curl | bash`, ~3 minutes e2e)
+- Own calibration faucet service (0.5 tFIL + 11 USDFC per drip, 3 drips per IP per 12h)
+- README + GitBook-ready `docs/` tree
 
-### Phase 3 — Public launch (ongoing)
-- Team buckets, shared folders
-- Desktop sync client (Mac first)
-- API / S3-compatible endpoint for devs
-- Retention policies, versioning
-- SOC 2 readiness
+### Phase 2 — Mainnet beta 🚧 (now, target Q2 2026)
+- `FILBUCKET_CHAIN=mainnet` — swap RPC + contract addresses
+- Real USDFC top-up pipeline (Circle / Coinbase), ops-wallet runway alerts
+- Cost accounting pipeline + gas-price-aware commit batching
+- Auth (email + magic link), per-device session list
+- Stripe billing (cards) + Vipps (NO), quotas enforced per tier
+- Aggregation for small files (~100 MiB CAR bundles)
+- Cold-restore with proper byte-range reassembly
+- Repair worker for SP faults
+- Mac app notarization + Sparkle auto-update
+- 20-user private beta
+
+### Phase 3 — Public launch (target Q3 2026)
+- Team buckets, shared folders, basic permissions
+- S3-compatible API (rclone out of the box)
+- Private Vault (user-held keys, E2EE)
+- Versioning + retention policies
+- iOS app (SwiftUI share extension)
+- FilBeam CDN, edge caching tiers
+- SOC 2 readiness prep
+
+### Phase 4 — Scale (target 2027)
+- Own CDN layer (top-20 POPs)
+- EU-hosted DB option
+- Enterprise tier (SSO, audit exports, custom data-residency)
+- Open-source durability-worker core (Apache-2.0)
 
 ### Wedge recommendation (from PROJECT.md)
 Start with **"durable large-file sharing"** — WeTransfer but files don't disappear in 7 days, and there is a clear "this is stored durably on a public network" trust story. It's the narrowest, clearest product, and it lets us demo the Filecoin durability without ever saying the word "Filecoin" unless a user clicks "Why is this safer?".

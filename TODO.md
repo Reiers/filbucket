@@ -1,80 +1,102 @@
 # FilBucket TODO
 
-See `ARCHITECTURE.md` for the full design. This file is the execution queue.
+See `ARCHITECTURE.md` for the full design. This file is the near-term execution queue. Historical work lives in [`docs/operations/changelog.md`](./docs/operations/changelog.md).
 
 ## Locked defaults (2026-04-18, see ARCHITECTURE §13)
 - Wedge: **durable large-file sharing**
 - Stack: **Node + TS end-to-end** (Next.js 15, Fastify, Postgres/Drizzle, BullMQ/Redis, Synapse SDK + viem)
 - Hosting: **Hetzner 157.180.16.39** (alongside Nøytral, namespaced `/opt/filbucket`)
-- Chain: **calibration for Phase 0/1**, mainnet at Phase 2
+- Chain: **calibration for Phase 0/1, mainnet at Phase 2** — migration starts now
 - Encryption: **managed envelope keys** by default; user-held keys later as Private Vault
 - Pricing: **Free 10 GB / $10 500 GB / $25 2 TB**
-- Brand: **no crypto words in primary UX**, Filecoin only in deep-link "How your files stay safe"
+- Brand: **no crypto words in primary UX**; Filecoin only in deep-link "How your files stay safe"
 
-## Phase 0 — Dev spike (post-decision)
-- [ ] Scaffold `web/` (Next.js 15 + Tailwind, calm design tokens)
-- [ ] Scaffold `server/` (Fastify + Postgres + Drizzle/Prisma + BullMQ)
-- [ ] Add Synapse SDK: `pnpm add @filoz/synapse-sdk viem`
-- [ ] Create ops wallet on calibration, fund with tFIL + USDFC from faucet
-- [ ] Deposit USDFC into Filecoin Pay, approve FWSS as operator
-- [ ] End-to-end spike: upload 1 file → hot cache → Synapse `storage.upload` → wait for first PDP proof → flip state to "Secured"
-- [ ] Minimal chain-watcher for PDPVerifier + FWSS events
-- [ ] Tiny terminal UI that prints state transitions
+---
 
-## Phase 1 — MVP
-### Product
-- [ ] Homepage positioning (wedge-specific)
-- [ ] Pricing page
-- [ ] Durability-language copy (no crypto words in primary flow)
+## Phase 0 ✅ (done 2026-04-18)
 
-### UX
-- [ ] Landing page
-- [ ] Auth (email magic link)
-- [ ] File library
-- [ ] Drag-and-drop upload with resumable multipart
-- [ ] Share-link page (expiry, password, email gate)
-- [ ] Restore flow
-- [ ] File state badges ("Uploading / Ready / Secured / Archived / Restoring / Failed")
+Foundation: Next.js + Fastify + Postgres + Redis + MinIO + Synapse SDK, upload → hot cache → PDP commit → first-proof watcher, ops wallet funded + FWSS approved, share links live.
 
-### Architecture
-- [ ] Finalize Postgres schema (`users`, `buckets`, `files`, `file_pieces`, `pieces`, `aggregates`, `rails`, `proving_status`, `shares`, `share_accesses`, `usage_events`)
-- [ ] Upload pipeline (ingest → AV scan → encrypt → chunk/aggregate → commit)
-- [ ] Hot cache layer (S3 / Caddy + Varnish)
-- [ ] Durability orchestrator (queue + Synapse SDK driver, one-worker-per-dataset lock)
-- [ ] Restore pipeline (cold → hot rehydration)
-- [ ] Sharing model + short-link service
-- [ ] Aggregation worker for <1 MiB files (target ~100 MiB CAR bundles, 15 min timeout)
-- [ ] Repair job when an SP faults PDP proofs
+## Phase 1 ✅ (done 2026-04-19)
 
-### Infra
-- [ ] Choose + provision DB (managed Postgres or self-hosted)
-- [ ] S3 bucket + CDN front (CloudFront or Caddy edge)
-- [ ] Monitoring: proving health, rail lockup runway, SP SLA, queue lag
-- [ ] Alerting: wallet balance below 30-day lockup floor, commit failure rate, SP miss rate
+Premium product: streaming uploads, folder uploads, inline previews, interactive bucket dropzone, iCloud-style UI overhaul with dark mode, native Mac app, one-line installer, custom faucet, full docs.
+
+---
+
+## Phase 2 — Mainnet beta 🚧 (now)
+
+Calibration validated end-to-end. Time to ship on real economics.
+
+### Mainnet migration
+- [ ] Add `mainnet` branch to `env.ts` / `synapse.ts` — swap RPC URL + USDFC address + FWSS + PDPVerifier contract addresses
+- [ ] Create **mainnet ops wallet** (fresh key, stored in 1Password, funded via Circle / Coinbase)
+- [ ] First-time mainnet `setup-wallet` — deposit + approveService against real USDFC
+- [ ] Install hardened monitoring: wallet runway vs 30-day lockup floor → Telegram alert at < 60 days
+- [ ] Switch `install.sh` default chain to `mainnet` behind a feature flag (`FILBUCKET_CHAIN=calibration` still works for devs)
+- [ ] Document the chain-switch process for anyone self-hosting
+
+### Auth
+- [ ] Email + magic link (Postmark or Resend), HS256-signed session cookies
+- [ ] Per-device session list in settings
+- [ ] Retire `X-Dev-User` header flow (still available via `FILBUCKET_DEV_AUTH=1` for local)
+- [ ] Password-reset + account-delete surfaces
 
 ### Billing
-- [ ] Stripe integration (fiat in)
-- [ ] Quota enforcement per tier
-- [ ] USDFC top-up routine (Coinbase/Circle) — manual for MVP, scheduled later
+- [ ] Stripe integration (fiat in), webhook handling for subscription lifecycle
+- [ ] Vipps integration for Norway
+- [ ] Quota enforcement on upload init path (reject if over tier)
+- [ ] Pricing page ($0 / $10 / $25), with live Filecoin-cost-per-GB sanity tooltip
+- [ ] USDFC top-up routine (manual for MVP; scheduled once we have volume data)
 
-## Phase 2 — Mainnet beta
-- [ ] Move rails to Filecoin mainnet
-- [ ] Aggregation live
-- [ ] FilBeam CDN wired in
-- [ ] Client-side encryption default-on
-- [ ] DB backup → Filecoin (self-dogfood for disaster recovery)
-- [ ] Invite-only beta: 20 users
+### Pipeline hardening
+- [ ] Aggregation for <1 MiB files (~100 MiB CAR bundles, 15-minute window)
+- [ ] Cold-restore with multi-chunk byte-range reassembly
+- [ ] Repair worker: re-upload + re-commit when an SP misses PDP proofs past threshold
+- [ ] Gas-price-aware commit batching during mainnet spikes
 
-## Phase 3 — Public launch
-- [ ] Team buckets + shared folders + permissions
-- [ ] Desktop sync client (Mac first)
-- [ ] S3-compatible API for devs
+### Mac app
+- [ ] Notarization + hardened runtime
+- [ ] Sparkle auto-update feed
+- [ ] Menu-bar mode
+
+### Observability
+- [ ] Proving health dashboard
+- [ ] Rail-lockup-runway graph
+- [ ] Per-SP success rate + latency
+- [ ] Queue lag alerting
+
+### Private beta
+- [ ] Onboard 20 invited users
+- [ ] Feedback loop (Linear-style inbox from inside the app)
+
+---
+
+## Phase 3 — Public launch (Q3 2026)
+
+- [ ] Team buckets + shared folders + permissions (owner / editor / viewer)
+- [ ] S3-compatible API for developers
+- [ ] Private Vault (user-held keys, E2EE variant)
 - [ ] Versioning + retention policies
-- [ ] SOC 2 readiness
+- [ ] iOS app (share extension)
+- [ ] FilBeam CDN integration
+- [ ] SOC 2 readiness prep
+
+---
+
+## Phase 4 — Scale (2027)
+
+- [ ] Own CDN layer (top-20 POPs)
+- [ ] EU-hosted DB option
+- [ ] Enterprise tier (SSO, audit exports)
+- [ ] Open-source durability-worker core
+
+---
 
 ## Polish (ongoing)
-- [ ] Replace all protocol jargon with human language
-- [ ] Add trust cues without chain theater
-- [ ] Make share page beautiful
-- [ ] Make empty states feel inviting
-- [ ] Plain-English "How FilBucket keeps your files safe" page (this is the only place Filecoin appears)
+
+- [ ] Replace any residual protocol jargon with human language
+- [ ] Make share page beautiful (Phase 2)
+- [ ] Empty states should feel inviting, not blank
+- [ ] "How FilBucket keeps your files safe" page (the only place Filecoin appears in the primary flow)
+- [ ] Accessibility audit — focus-ring coverage, screen-reader labels on bucket + icons
+- [ ] Reduced-motion polish — test every animation under `prefers-reduced-motion: reduce`

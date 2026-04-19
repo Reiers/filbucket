@@ -272,10 +272,18 @@ function StatusChip({ state }: { state: FileState }) {
 function humanKind(mime: string): string {
   if (!mime) return 'File'
   if (mime === 'application/pdf') return 'PDF Document'
+  if (mime === 'application/zip' || mime === 'application/x-zip-compressed') return 'Archive · ZIP'
+  if (mime === 'application/x-tar') return 'Archive · TAR'
+  if (mime === 'application/gzip') return 'Archive · GZIP'
+  if (mime === 'application/octet-stream' || mime === 'binary/octet-stream') return 'Binary file'
   if (mime.startsWith('image/')) return `Image · ${mime.split('/')[1]?.toUpperCase()}`
   if (mime.startsWith('video/')) return `Video · ${mime.split('/')[1]?.toUpperCase()}`
   if (mime.startsWith('audio/')) return `Audio · ${mime.split('/')[1]?.toUpperCase()}`
-  if (mime.startsWith('text/')) return `Text · ${mime.split('/')[1] ?? ''}`
-  const last = mime.split('/').pop()
-  return last ? last.toUpperCase() : 'File'
+  if (mime.startsWith('text/')) {
+    const sub = mime.split('/')[1] ?? ''
+    return `Text${sub ? ' · ' + sub : ''}`
+  }
+  const last = mime.split('/').pop() ?? ''
+  // Last-resort: title-case rather than SHOUTING.
+  return last ? last.charAt(0).toUpperCase() + last.slice(1) : 'File'
 }

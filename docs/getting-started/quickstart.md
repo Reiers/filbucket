@@ -4,6 +4,12 @@ Get FilBucket running locally in about 5 minutes.
 
 {% hint style="warning" %}
 Phase 0 / 1 runs against the **Filecoin Calibration testnet**. You need a calibration wallet funded with a little tFIL (for gas) and some USDFC (for the storage rail). Both are free.
+
+**Phase 2 — mainnet migration — is in progress.** For mainnet setup see the [roadmap](../operations/roadmap.md); the quickstart below is the calibration flow.
+{% endhint %}
+
+{% hint style="info" %}
+On macOS, you can skip this whole page: run the [one-line installer](installer.md) and you'll be done in 3 minutes. This quickstart is for anyone who wants to go manual.
 {% endhint %}
 
 ## Prerequisites
