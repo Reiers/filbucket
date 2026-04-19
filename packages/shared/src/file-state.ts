@@ -29,7 +29,7 @@ export const FILE_STATE_VALUES: FileState[] = [
  */
 export const FILE_STATE_LABEL: Record<FileState, string> = {
   uploading: 'Uploading',
-  hot_ready: 'Ready',
+  hot_ready: 'Saving',
   pdp_committed: 'Secured',
   archived_cold: 'Archived',
   restore_from_cold: 'Restoring',

@@ -782,10 +782,7 @@ ${BLUE}     ▕${CYAN}████████${BLUE}▏${RESET}
 ${BLUE}      ▕${CYAN}██████${BLUE}▏${RESET}
 ${BLUE}       ▔▔▔▔▔▔▔▔${RESET}
 
-  ${BOLD}Repo${RESET}     $INSTALL_DIR
-  ${BOLD}Web${RESET}      ${BLUE}http://localhost:3010${RESET}
-  ${BOLD}API${RESET}      ${BLUE}http://localhost:4000${RESET}
-  ${BOLD}Console${RESET}  ${BLUE}http://localhost:9001${RESET}  ${DIM}(minio · filbucket / filbucketsecret)${RESET}
+  ${BOLD}Open${RESET}  ${BLUE}http://localhost:3010${RESET}
 
 EOF
 

@@ -2,161 +2,229 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   FilBucket — iCloud-style design system
+   White canvas, soft pastel tiles, SF-Pro-alike type (Inter), spring motion.
+   ========================================================================== */
+
 :root {
   color-scheme: light;
 
-  /* Paper: warm, slightly desaturated cream. Two stops, plus a deep neutral. */
-  --paper: #f6f1e7;
-  --paper-raised: #fbf7ed;
-  --paper-sunken: #efe8d8;
+  /* Canvas — true white with the faintest warm tint. */
+  --canvas: #fbfbfd;
+  --surface: #ffffff;
+  --surface-sunk: #f5f5f7;
+  --surface-elev: #ffffff;
 
-  /* Ink: near-black with brown undertone, keeps warmth out of cold grey. */
-  --ink: #171513;
-  --ink-soft: #58524a;
-  --ink-mute: #8b857a;
+  /* Ink — near-black, slight warm tilt for humanity. */
+  --ink: #1d1d1f;
+  --ink-soft: #515154;
+  --ink-mute: #8e8e93;
+  --ink-faint: #c7c7cc;
 
-  /* Hairlines. */
-  --line: #e4ddcc;
-  --line-strong: #cfc5ae;
+  /* Hairlines. Use sparingly — iCloud mostly separates with elevation. */
+  --line: #e8e8ed;
+  --line-strong: #d2d2d7;
 
-  /* Accent: burnt sienna, the bucket color. Saturated enough to carry weight. */
-  --accent: #b84918;
-  --accent-soft: #f3d5bd;
-  --accent-deep: #8a3410;
+  /* Pastel accents, lifted from iCloud service tiles.
+     Each has a fill (used for backgrounds) and a hue (used for icons/text). */
+  --accent-sky:        #7fb9ff;  /* upload / active */
+  --accent-sky-fill:   #e4f0ff;
+  --accent-sky-deep:   #0071e3;
 
-  /* Secondary / medallion blue \u2014 nods to Filecoin without leaning on it. */
-  --medallion: #0b6fc0;
+  --accent-lavender:      #b49cff;
+  --accent-lavender-fill: #ecdffd;
+  --accent-lavender-deep: #6b4cd9;
+
+  --accent-mint:       #7fd4b7;
+  --accent-mint-fill:  #d5f2e8;
+  --accent-mint-deep:  #00875a;
+
+  --accent-peach:      #ffb68a;
+  --accent-peach-fill: #ffe7d4;
+  --accent-peach-deep: #cc5500;
+
+  --accent-rose:       #ff8ea8;
+  --accent-rose-fill:  #ffd9e2;
+  --accent-rose-deep:  #c8345e;
+
+  --accent-sunflower:      #ffcf5c;
+  --accent-sunflower-fill: #fff2cf;
+  --accent-sunflower-deep: #a77300;
+
+  /* Brand primary — sky blue, matches the bucket and Filecoin roots. */
+  --brand:       var(--accent-sky-deep);
+  --brand-fill:  var(--accent-sky-fill);
 
   /* Semantic. */
-  --ok: #3b6a38;
-  --ok-soft: #d4e2cf;
-  --warn: #a5720b;
-  --err: #a23a2a;
-  --err-soft: #f0d4ce;
+  --ok: #28a745;
+  --ok-fill: #dcf3e3;
+  --warn: #f5a623;
+  --warn-fill: #fff4db;
+  --err: #ff3b30;
+  --err-fill: #ffe0de;
+
+  /* Elevation — Apple-style layered shadows, never a hard border. */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 6px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(17, 17, 26, 0.06), 0 2px 4px -2px rgba(17, 17, 26, 0.04);
+  --shadow-lg: 0 12px 32px -8px rgba(17, 17, 26, 0.10), 0 8px 16px -8px rgba(17, 17, 26, 0.06);
+  --shadow-xl: 0 24px 48px -12px rgba(17, 17, 26, 0.18), 0 16px 24px -16px rgba(17, 17, 26, 0.08);
+
+  /* Spring easing — iCloud/Apple uses a specific cubic very close to this. */
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth:  cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-exit:    cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html, body {
-  background: var(--paper);
+  background: var(--canvas);
   color: var(--ink);
 }
 
 body {
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: 'ss01', 'ss02', 'cv11';
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  letter-spacing: -0.01em;
 }
 
-/* Subtle paper grain \u2014 keeps it from looking AI-flat. */
+/* Background: soft radial pastel gradient, barely there.
+   Gives the white canvas a sense of depth without being a color. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* Very soft warm vignette behind content \u2014 depth without being dark-mode. */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
   background:
-    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(184, 73, 24, 0.08), transparent 60%),
-    radial-gradient(ellipse 70% 50% at 50% 110%, rgba(11, 111, 192, 0.04), transparent 60%);
+    radial-gradient(ellipse 60% 50% at 20% 0%, rgba(127, 185, 255, 0.12), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 100%, rgba(180, 156, 255, 0.10), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 50% 50%, rgba(255, 182, 138, 0.05), transparent 60%);
 }
 
-/* ---------------- Bucket animation keyframes ---------------- */
+/* ==========================================================================
+   Motion primitives
+   ========================================================================== */
 
-@keyframes bucket-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50%      { transform: translateY(-1px) scale(1.004); }
+@keyframes fb-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes bucket-shimmer {
-  0%, 100% { opacity: 0.55; }
-  50%      { opacity: 0.9; }
+@keyframes fb-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
-@keyframes bucket-lid-float {
-  0%, 100% { transform: translate(0, 0) rotate(-8deg); }
-  50%      { transform: translate(0, -2px) rotate(-10deg); }
+@keyframes fb-sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes splash-rise {
-  0%   { transform: translateY(6px) scale(0.7); opacity: 0; }
-  40%  { transform: translateY(-6px) scale(1.05); opacity: 1; }
-  100% { transform: translateY(-18px) scale(0.6); opacity: 0; }
+@keyframes fb-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
 }
 
-@keyframes progress-indeterminate {
+@keyframes fb-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes fb-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fb-progress-indeterminate {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
 
-@keyframes ping-soft {
-  0%   { transform: scale(1); opacity: 0.7; }
-  80%, 100% { transform: scale(2.2); opacity: 0; }
+@keyframes fb-bucket-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-1.5px) scale(1.008); }
 }
 
-/* Utility class helpers \u2014 applied by components. */
-.bucket-idle { animation: bucket-breathe 5.5s ease-in-out infinite; }
-.bucket-medallion-shimmer { animation: bucket-shimmer 4s ease-in-out infinite; }
-.bucket-lid-float { animation: bucket-lid-float 2.6s ease-in-out infinite; transform-origin: 52% 60%; }
-
-/* New bucket keyframes: body-level breathing + sway, shadow breathing,
-   droplets falling into the bucket, liquid surface wobble. */
-@keyframes bucket-body-breathe {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50%      { transform: translate3d(0, -1.5px, 0) scale(1.006); }
+@keyframes fb-bucket-lid-lift {
+  0%, 100% { transform: translate(0, 0) rotate(-4deg); }
+  50%      { transform: translate(0, -3px) rotate(-6deg); }
 }
 
-@keyframes bucket-body-sway {
-  0%,  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
-  25%       { transform: translate3d(-1.2px, -0.4px, 0) rotate(-0.6deg); }
-  75%       { transform: translate3d(1.2px, -0.4px, 0) rotate(0.6deg); }
+@keyframes fb-droplet {
+  0%   { transform: translateY(-32px) scale(0.8); opacity: 0; }
+  20%  { opacity: 1; }
+  85%  { transform: translateY(48px) scale(1); opacity: 1; }
+  100% { transform: translateY(56px) scale(0.6); opacity: 0; }
 }
 
-@keyframes shadow-breathe {
-  0%, 100% { transform: translateX(-50%) scale(1); opacity: 1; }
-  50%      { transform: translateX(-50%) scale(1.08); opacity: 0.85; }
+@keyframes fb-liquid-wobble {
+  0%, 100% { transform: translateX(0) scaleY(1); }
+  50%      { transform: translateX(1px) scaleY(1.03); }
 }
 
-@keyframes droplet-fall {
-  0%   { transform: translateY(0) scale(0.9); opacity: 0; }
-  15%  { opacity: 1; }
-  85%  { transform: translateY(70px) scale(1); opacity: 1; }
-  100% { transform: translateY(82px) scale(0.6); opacity: 0; }
+/* Utility classes */
+.fb-animate-fade-in    { animation: fb-fade-in 0.36s var(--ease-smooth) both; }
+.fb-animate-scale-in   { animation: fb-scale-in 0.32s var(--ease-spring) both; }
+.fb-animate-sheet-up   { animation: fb-sheet-up 0.4s var(--ease-spring) both; }
+.fb-animate-pulse      { animation: fb-pulse 2s ease-in-out infinite; }
+.fb-animate-spin       { animation: fb-spin 1s linear infinite; }
+.fb-bucket-breathe     { animation: fb-bucket-breathe 5.5s ease-in-out infinite; transform-origin: 50% 90%; }
+.fb-bucket-lid-lift    { animation: fb-bucket-lid-lift 2.8s ease-in-out infinite; transform-origin: 50% 60%; }
+.fb-liquid-wobble      { animation: fb-liquid-wobble 1.4s ease-in-out infinite; }
+
+/* Shimmer placeholder (loading states) */
+.fb-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.04), transparent);
+  background-size: 200% 100%;
+  animation: fb-shimmer 1.6s linear infinite;
 }
 
-@keyframes bucket-liquid-wobble {
-  0%, 100% { transform: translateX(0); }
-  50%      { transform: translateX(1.5px); }
+/* Indeterminate progress bar */
+.fb-indeterminate {
+  position: relative;
+  overflow: hidden;
 }
-
-.bucket-body-breathe { animation: bucket-body-breathe 5.5s ease-in-out infinite; transform-origin: 50% 90%; }
-.bucket-body-sway { animation: bucket-body-sway 2.8s ease-in-out infinite; transform-origin: 50% 100%; }
-.bucket-liquid-wobble { animation: bucket-liquid-wobble 1.2s ease-in-out infinite; }
-
-
-.indeterminate-bar::after {
+.fb-indeterminate::after {
   content: '';
   position: absolute;
   inset: 0;
   width: 35%;
   background: linear-gradient(90deg, transparent, currentColor, transparent);
-  animation: progress-indeterminate 1.6s ease-in-out infinite;
+  opacity: 0.6;
+  animation: fb-progress-indeterminate 1.4s ease-in-out infinite;
 }
 
-.ping-soft {
-  animation: ping-soft 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+/* ==========================================================================
+   Frosted glass (sidebar, modals) — works on white too with the right alpha.
+   ========================================================================== */
+.fb-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
-/* Reduced motion \u2014 kill it all. */
+.fb-glass-sunk {
+  background: rgba(245, 245, 247, 0.78);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Apple-style ring focus — sky blue, 3px, outside. */
+*:focus-visible {
+  outline: 2.5px solid var(--accent-sky-deep);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Kill the default button tap highlight on iOS. */
+button, a { -webkit-tap-highlight-color: transparent; }
+
+/* Reduced motion — kill it all. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -165,9 +233,15 @@ body::after {
   }
 }
 
-/* Nice default focus ring without blue blob. */
-*:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 6px;
+/* ==========================================================================
+   Scrollbars — thin, neutral, disappear on blur (macOS style).
+   ========================================================================== */
+::-webkit-scrollbar              { width: 10px; height: 10px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
+::-webkit-scrollbar-thumb:hover  { background: rgba(0, 0, 0, 0.25); background-clip: padding-box; }

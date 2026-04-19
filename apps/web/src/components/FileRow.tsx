@@ -1,18 +1,18 @@
 'use client'
 
-import { type FileDTO, FILE_STATE_LABEL, type FileState } from '@filbucket/shared'
+import { type FileDTO, FILE_STATE_LABEL } from '@filbucket/shared'
 import { useMemo } from 'react'
-import { classifyPreview, fmtBytes, fmtBytesShort, fmtRate, fmtRelative, splitPath } from '../lib/files'
+import { classifyPreview, fmtBytes, fmtRelative } from '../lib/files'
 import { useRollingRate } from '../lib/useRollingRate'
 import { downloadUrl } from '../lib/api'
 
 /**
- * One row in the Library. Handles its own progress math and rate smoothing.
- *
- * Upload phases:
- *  - Local XHR phase:  `localUploaded` + `localTotal` are driven by the homepage state.
- *  - Server chunking:  `file.progress.totalUploaded / totalBytes` is set by the durability
- *                      worker's `chunk_bytes` events, surfaced via /api/files.
+ * iCloud Drive-style file row.
+ * - Pastel square icon sized to file type.
+ * - Name + path prefix (if folder-uploaded).
+ * - Soft state pill on the right.
+ * - Hover reveals a trailing action cluster (preview, download, delete).
+ * - Selected row gets the full pastel-fill treatment (no blue-bar).
  */
 export function FileRow({
   file,
@@ -31,207 +31,302 @@ export function FileRow({
   onPreview: () => void
   onDelete: () => void
 }) {
-  const state = file.state as FileState
-  const { dir, base } = splitPath(file.name)
+  // Unified progress:
+  //  - Uploading + XHR:  localUploaded / localTotal drives 0..1 on a 0..0.5 scale
+  //    (first half of the pipeline).
+  //  - hot_ready + server-chunking: 0.5 + serverProgress * 0.5 (second half).
+  //  - pdp_committed: 1.0 (secured).
+  //  - failed: -1 (sentinel).
+  const progress = useMemo(() => computeProgress(file, localUploaded, localTotal), [file, localUploaded, localTotal])
 
-  // Compute progress in a unified way.
-  const { pct, label, phase } = useMemo(() => {
-    if (state === 'uploading' && localTotal != null && localTotal > 0) {
-      const up = localUploaded ?? 0
-      const p = Math.min(100, (up / localTotal) * 100)
-      return {
-        pct: p,
-        label: `${fmtBytesShort(up)} / ${fmtBytesShort(localTotal)} · ${Math.round(p)}%`,
-        phase: 'local' as const,
-      }
-    }
-    if (state === 'hot_ready' && file.progress != null && file.progress.totalBytes > 0) {
-      const p = Math.min(100, (file.progress.totalUploaded / file.progress.totalBytes) * 100)
-      return {
-        pct: p,
-        label: `${fmtBytesShort(file.progress.totalUploaded)} / ${fmtBytesShort(file.progress.totalBytes)} · ${Math.round(p)}%`,
-        phase: 'server' as const,
-      }
-    }
-    return { pct: 0, label: '', phase: 'none' as const }
-  }, [state, localUploaded, localTotal, file.progress])
+  const rate = useRollingRate(
+    file.state === 'uploading' && localUploaded != null ? localUploaded : 0,
+  )
 
-  const rateBytes =
-    phase === 'local' ? localUploaded ?? 0 : phase === 'server' ? file.progress?.totalUploaded ?? 0 : 0
-  const rate = useRollingRate(rateBytes)
+  const previewable = classifyPreview(file.mimeType, file.name) !== 'none'
+  const parts = file.name.split('/')
+  const basename = parts[parts.length - 1] ?? file.name
+  const dirpath = parts.length > 1 ? parts.slice(0, -1).join('/') : ''
 
-  const showProgress = phase !== 'none' && pct < 100
-  const previewKind = classifyPreview(file.mimeType, file.name)
-  const canPreview =
-    (state === 'hot_ready' || state === 'pdp_committed') &&
-    previewKind !== 'none'
-
-  // Thumbnail for image files only \u2014 the rest keep a textual icon.
-  const thumbSrc =
-    previewKind === 'image' && (state === 'hot_ready' || state === 'pdp_committed')
-      ? downloadUrl(file.id)
-      : null
+  const rowCls = [
+    'group relative grid items-center gap-4 px-4 py-2.5 transition-colors duration-150',
+    'grid-cols-[44px_minmax(0,1fr)_96px_auto_auto]',
+    selected ? 'bg-sky-fill/70' : 'hover:bg-surface-sunk/70',
+  ].join(' ')
 
   return (
-    <div
-      className={`group/row relative grid w-full items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-paper/70 ${
-        selected ? 'bg-accent-soft/40' : ''
-      }`}
-      style={{ gridTemplateColumns: 'minmax(0,1fr) 88px 170px 80px 32px' }}
-    >
-      {/* Thin progress line underneath the status column */}
-      {showProgress && (
-        <ProgressLine pct={pct} indeterminate={phase === 'server' && rate === 0} />
-      )}
+    <div role="button" tabIndex={0} onClick={onSelect} className={rowCls}>
+      {/* Icon tile */}
+      <FileIcon mime={file.mimeType} name={file.name} state={file.state} />
 
-      {/* Name + thumb */}
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex min-w-0 items-center gap-3 truncate text-left focus:outline-none"
-      >
-        <Thumb thumbSrc={thumbSrc} mimeType={file.mimeType} name={file.name} />
-        <div className="min-w-0 flex-1">
-          {dir != null && (
-            <div className="truncate font-mono text-[10px] uppercase tracking-wider text-ink-mute">
-              {dir}
-            </div>
+      {/* Name + path */}
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-[14px] font-medium text-ink">{basename}</span>
+          {dirpath && (
+            <span className="hidden truncate font-mono text-[11px] text-ink-mute sm:inline">
+              {dirpath}
+            </span>
           )}
-          <div className="truncate text-ink">{base}</div>
         </div>
-      </button>
+        {/* Progress row appears only when active. */}
+        {progress >= 0 && progress < 1 && (
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-1 w-40 overflow-hidden rounded-full bg-line">
+              <div
+                className="h-full rounded-full bg-sky-deep transition-all duration-500 ease-smooth"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+            <span className="font-mono text-[11px] text-ink-mute">
+              {Math.round(progress * 100)}%
+              {rate > 0 && file.state === 'uploading' && (
+                <span className="ml-1.5 opacity-70">· {fmtBytes(rate)}/s</span>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
 
       {/* Size */}
-      <span className="text-right font-mono text-[11px] text-ink-mute">
+      <span className="text-right font-mono text-[12px] text-ink-soft">
         {fmtBytes(file.sizeBytes)}
       </span>
 
-      {/* Status + live microlabel */}
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <StatusBadge state={state} />
-          {canPreview && (
-            <button
-              type="button"
+      {/* State pill */}
+      <StatePill file={file} />
+
+      {/* Added / actions toggle. On hover the added label fades out for actions. */}
+      <div className="relative w-[180px]">
+        <span className="absolute inset-y-0 right-0 flex items-center font-mono text-[11px] text-ink-mute opacity-100 transition-opacity duration-150 group-hover:opacity-0">
+          {fmtRelative(file.createdAt)}
+        </span>
+        <div className="absolute inset-y-0 right-0 flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          {previewable && file.state !== 'uploading' && file.state !== 'failed' && (
+            <RowIconButton
+              title="Preview"
               onClick={(e) => {
                 e.stopPropagation()
                 onPreview()
               }}
-              className="text-[10px] font-mono uppercase tracking-wider text-ink-mute underline decoration-line-strong decoration-1 underline-offset-[3px] transition-colors hover:text-accent hover:decoration-accent"
-              title="Preview"
             >
-              view
-            </button>
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                <path d="M2 10c2-4 5-6 8-6s6 2 8 6c-2 4-5 6-8 6s-6-2-8-6Z" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+            </RowIconButton>
           )}
+          {file.state !== 'uploading' && file.state !== 'failed' && (
+            <RowIconButton
+              as="a"
+              href={downloadUrl(file.id)}
+              download
+              title="Download"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                <path d="M10 4v10M6 10l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 16h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </RowIconButton>
+          )}
+          <RowIconButton
+            title="Delete"
+            variant="danger"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+              <path d="M5 6h10M8 6V4h4v2M7 6l.6 10a1 1 0 0 0 1 .95h2.8a1 1 0 0 0 1-.95L13 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </RowIconButton>
         </div>
-        {showProgress && (
-          <span className="truncate font-mono text-[10px] text-ink-mute">
-            {label}
-            {rate > 0 ? ` · ${fmtRate(rate)}` : ''}
-          </span>
-        )}
       </div>
-
-      {/* Added */}
-      <span className="text-right font-mono text-[11px] text-ink-mute">
-        {fmtRelative(file.createdAt)}
-      </span>
-
-      {/* Delete */}
-      <span className="flex justify-end">
-        <button
-          type="button"
-          title={state === 'failed' ? 'Dismiss failed upload' : 'Delete'}
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-          className="rounded p-1.5 text-ink-mute opacity-0 transition-opacity hover:bg-err/10 hover:text-err group-hover/row:opacity-100 focus:opacity-100"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      </span>
     </div>
   )
 }
 
-function ProgressLine({ pct, indeterminate }: { pct: number; indeterminate: boolean }) {
+function computeProgress(file: FileDTO, localUp?: number, localTot?: number): number {
+  if (file.state === 'failed') return -1
+  if (file.state === 'pdp_committed') return 1
+  // Uploading: use local XHR bytes (0..0.5 range).
+  if (file.state === 'uploading') {
+    if (localTot != null && localTot > 0 && localUp != null) {
+      return Math.min(0.5, (localUp / localTot) * 0.5)
+    }
+    return 0.05
+  }
+  // hot_ready: local PUT done, server is chunking to SP. 0.5..1.0 range.
+  if (file.state === 'hot_ready') {
+    const p = file.progress
+    if (p && p.totalBytes > 0) {
+      return 0.5 + Math.min(0.5, (p.totalUploaded / p.totalBytes) * 0.5)
+    }
+    return 0.5
+  }
+  return 1
+}
+
+function StatePill({ file }: { file: FileDTO }) {
+  const s = file.state
+  const colors = {
+    uploading:         { bg: 'bg-sky-fill', fg: 'text-sky-deep', dot: 'bg-sky-deep' },
+    hot_ready:         { bg: 'bg-lavender-fill', fg: 'text-lavender-deep', dot: 'bg-lavender-deep' },
+    pdp_committed:     { bg: 'bg-mint-fill', fg: 'text-mint-deep', dot: 'bg-mint-deep' },
+    archived_cold:     { bg: 'bg-surface-sunk', fg: 'text-ink-soft', dot: 'bg-ink-mute' },
+    restore_from_cold: { bg: 'bg-sunflower-fill', fg: 'text-sunflower-deep', dot: 'bg-sunflower-deep' },
+    failed:            { bg: 'bg-err-fill', fg: 'text-err', dot: 'bg-err' },
+  }[s] ?? { bg: 'bg-surface-sunk', fg: 'text-ink-soft', dot: 'bg-ink-mute' }
+
+  const pulse = s === 'uploading' || s === 'hot_ready' || s === 'restore_from_cold'
+  const label = s === 'pdp_committed' ? 'Secured' : (FILE_STATE_LABEL as Record<string, string>)[s] ?? 'Unknown'
+
   return (
-    <span
-      className="pointer-events-none absolute inset-x-4 bottom-0 h-[2px] overflow-hidden rounded-full bg-line/60"
-      aria-hidden
-    >
-      {indeterminate ? (
-        <span className="indeterminate-bar relative block h-full w-full text-accent" />
-      ) : (
-        <span
-          className="block h-full bg-accent transition-all duration-300 ease-out"
-          style={{ width: `${pct.toFixed(1)}%` }}
-        />
-      )}
+    <span className={`inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${colors.bg} ${colors.fg}`}>
+      <span className={`relative inline-block h-1.5 w-1.5 rounded-full ${colors.dot}`}>
+        {pulse && (
+          <span className={`absolute inset-0 rounded-full ${colors.dot} fb-animate-pulse`} style={{ opacity: 0.5 }} />
+        )}
+      </span>
+      {label}
     </span>
   )
 }
 
-function Thumb({
-  thumbSrc,
-  mimeType,
-  name,
+function FileIcon({ mime, name, state }: { mime: string; name: string; state: string }) {
+  const kind = classifyForIcon(mime, name)
+  const palettes = {
+    image:  { bg: 'bg-peach-fill', fg: 'text-peach-deep' },
+    video:  { bg: 'bg-rose-fill', fg: 'text-rose-deep' },
+    audio:  { bg: 'bg-mint-fill', fg: 'text-mint-deep' },
+    doc:    { bg: 'bg-sky-fill', fg: 'text-sky-deep' },
+    code:   { bg: 'bg-lavender-fill', fg: 'text-lavender-deep' },
+    archive:{ bg: 'bg-sunflower-fill', fg: 'text-sunflower-deep' },
+    generic:{ bg: 'bg-surface-sunk', fg: 'text-ink-soft' },
+  }[kind]
+
+  return (
+    <div
+      className={[
+        'flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] shadow-xs transition-all duration-200',
+        palettes.bg,
+        palettes.fg,
+        state === 'uploading' ? 'fb-animate-pulse' : '',
+      ].join(' ')}
+      aria-hidden
+    >
+      {renderIcon(kind)}
+    </div>
+  )
+}
+
+function classifyForIcon(mime: string, name: string): 'image' | 'video' | 'audio' | 'doc' | 'code' | 'archive' | 'generic' {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  // Mime first, but fall back to extension because iOS HEIC / raw camera
+  // files often come over with mimeType=''.
+  if (mime.startsWith('image/') || ['heic', 'heif', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tiff', 'svg', 'raw', 'cr2', 'nef', 'dng'].includes(ext)) return 'image'
+  if (mime.startsWith('video/') || ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi'].includes(ext)) return 'video'
+  if (mime.startsWith('audio/') || ['mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg', 'opus'].includes(ext)) return 'audio'
+  if (mime === 'application/pdf' || mime.startsWith('text/markdown') || mime.includes('document') || mime === 'text/plain' || ['pdf', 'doc', 'docx', 'md', 'txt', 'rtf', 'pages'].includes(ext)) return 'doc'
+  if (['zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz'].includes(ext)) return 'archive'
+  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'sh', 'bash', 'zsh', 'json', 'yaml', 'yml', 'toml', 'html', 'htm', 'css', 'scss', 'sass', 'sql', 'rb', 'php', 'java', 'c', 'cpp', 'h', 'hpp', 'swift', 'kt', 'lua'].includes(ext)) return 'code'
+  return 'generic'
+}
+
+function renderIcon(kind: string) {
+  // 20×20 stroke-based icons, inherit currentColor.
+  switch (kind) {
+    case 'image':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.6" />
+          <circle cx="7.5" cy="8.5" r="1.3" fill="currentColor" />
+          <path d="M3 14l4-3 3 2 4-4 3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'video':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <rect x="3" y="5" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M15 9l3-2v6l-3-2" fill="currentColor" />
+        </svg>
+      )
+    case 'audio':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <path d="M8 14V6l8-2v10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="6.5" cy="14.5" r="2" stroke="currentColor" strokeWidth="1.6" />
+          <circle cx="14.5" cy="12.5" r="2" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      )
+    case 'doc':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          <path d="M12 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          <path d="M7 11h6M7 14h6M7 8h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      )
+    case 'code':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <path d="M7 7l-3 3 3 3M13 7l3 3-3 3M11 5l-2 10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'archive':
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <rect x="4" y="3" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M10 3v4M10 9v2M10 13v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      )
+    default:
+      return (
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none">
+          <path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          <path d="M12 3v4h4" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+        </svg>
+      )
+  }
+}
+
+function RowIconButton({
+  children,
+  onClick,
+  title,
+  variant,
+  as = 'button',
+  href,
+  download,
 }: {
-  thumbSrc: string | null
-  mimeType: string
-  name: string
+  children: React.ReactNode
+  onClick?: (e: React.MouseEvent) => void
+  title: string
+  variant?: 'default' | 'danger'
+  as?: 'button' | 'a'
+  href?: string
+  download?: boolean
 }) {
-  if (thumbSrc != null) {
+  const cls = [
+    'flex h-8 w-8 items-center justify-center rounded-[10px] transition-all duration-150 ease-spring',
+    'hover:scale-[1.08] active:scale-95',
+    variant === 'danger'
+      ? 'text-ink-soft hover:bg-err-fill hover:text-err'
+      : 'text-ink-soft hover:bg-surface-sunk hover:text-ink',
+  ].join(' ')
+
+  if (as === 'a') {
     return (
-      <span className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-md border border-line bg-paper-sunken">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={thumbSrc}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-      </span>
+      <a href={href} download={download} title={title} onClick={onClick} className={cls}>
+        {children}
+      </a>
     )
   }
   return (
-    <span className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md border border-line bg-paper text-base">
-      {emojiFor(mimeType, name)}
-    </span>
-  )
-}
-
-function emojiFor(mime: string, name: string): string {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (mime.startsWith('image/')) return '\uD83D\uDDBC'
-  if (mime.startsWith('video/')) return '\uD83C\uDF9E'
-  if (mime.startsWith('audio/')) return '\uD83C\uDFB5'
-  if (ext === 'pdf') return '\uD83D\uDCC4'
-  if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return '\uD83D\uDDDC'
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return '\uD83D\uDCCA'
-  if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) return '\uD83D\uDCDD'
-  return '\uD83D\uDCCE'
-}
-
-function StatusBadge({ state }: { state: FileState }) {
-  const label = FILE_STATE_LABEL[state] ?? 'Unknown'
-  const styles: Record<FileState, { dot: string; text: string }> = {
-    uploading: { dot: 'bg-medallion animate-pulse', text: 'text-medallion' },
-    hot_ready: { dot: 'bg-ink-soft', text: 'text-ink-soft' },
-    pdp_committed: { dot: 'bg-ok', text: 'text-ok' },
-    archived_cold: { dot: 'bg-ink-mute', text: 'text-ink-mute' },
-    restore_from_cold: { dot: 'bg-warn animate-pulse', text: 'text-warn' },
-    failed: { dot: 'bg-err', text: 'text-err' },
-  }
-  const s = styles[state] ?? styles.hot_ready
-  return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider ${s.text}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-      {label}
-    </span>
+    <button type="button" title={title} onClick={onClick} className={cls}>
+      {children}
+    </button>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { type FileDTO } from '@filbucket/shared'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { completeUpload, deleteFile, downloadUrl, initUpload, listFiles, putObject } from '../lib/api'
 import { DEFAULT_BUCKET_ID, DEV_USER_ID } from '../lib/env'
 import { FileDetailPanel } from '../components/FileDetailPanel'
@@ -11,11 +11,9 @@ import { PreviewModal } from '../components/PreviewModal'
 import type { NamedFile } from '../lib/files'
 
 interface LocalUpload {
-  /** file.name + path used for display */
   displayName: string
   uploaded: number
   total: number
-  /** matches FileDTO.id once init has returned */
   fileId: string | null
 }
 
@@ -25,14 +23,28 @@ export default function HomePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [previewFor, setPreviewFor] = useState<FileDTO | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement | null>(null)
+
+  // ⌘K / Ctrl-K focuses the search field. Esc while focused clears + blurs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const configOk = Boolean(DEV_USER_ID && DEFAULT_BUCKET_ID)
 
   const refresh = useCallback(async () => {
     if (!configOk) return
     try {
-      const rows = await listFiles(DEFAULT_BUCKET_ID)
-      setFiles(rows)
+      setFiles(await listFiles(DEFAULT_BUCKET_ID))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -48,15 +60,11 @@ export default function HomePage() {
     async (named: NamedFile) => {
       if (!configOk) return
       const { file, path } = named
-      const key = `${path}\u0000${file.size}\u0000${file.lastModified}`
-      setUploading((s) => [
-        ...s,
-        { displayName: path, uploaded: 0, total: file.size, fileId: null },
-      ])
+      setUploading((s) => [...s, { displayName: path, uploaded: 0, total: file.size, fileId: null }])
       setError(null)
       try {
         const init = await initUpload({
-          filename: path, // folder-aware: server sees "sub/dir/file.ext" (max 512 chars)
+          filename: path,
           size: file.size,
           mimeType: file.type || 'application/octet-stream',
           bucketId: DEFAULT_BUCKET_ID,
@@ -70,9 +78,7 @@ export default function HomePage() {
         )
         await putObject(init.uploadUrl, file, (uploaded, total) => {
           setUploading((s) =>
-            s.map((u) =>
-              u.fileId === init.fileId ? { ...u, uploaded, total } : u,
-            ),
+            s.map((u) => (u.fileId === init.fileId ? { ...u, uploaded, total } : u)),
           )
         })
         await completeUpload(init.fileId)
@@ -81,8 +87,6 @@ export default function HomePage() {
         setError(e instanceof Error ? e.message : String(e))
       } finally {
         setUploading((s) => s.filter((u) => u.displayName !== path || u.total !== file.size))
-        // Note: the key var intentionally unused here; the filter above is correct.
-        void key
       }
     },
     [configOk, refresh],
@@ -90,8 +94,6 @@ export default function HomePage() {
 
   const onFiles = useCallback(
     (incoming: NamedFile[]) => {
-      // Kick off uploads in parallel but cap concurrency to 3 so we don't overwhelm
-      // the browser's XHR pool on giant folder drops.
       const MAX_CONCURRENT = 3
       let idx = 0
       const next = () => {
@@ -99,9 +101,7 @@ export default function HomePage() {
           const n = incoming[idx++]
           if (n == null) continue
           void upload(n).finally(next)
-          // Increment concurrency by letting this call queue up; the loop below will
-          // break once we've fired MAX_CONCURRENT tasks from this tick.
-          if ((idx % MAX_CONCURRENT) === 0) break
+          if (idx % MAX_CONCURRENT === 0) break
         }
       }
       next()
@@ -109,26 +109,17 @@ export default function HomePage() {
     [upload],
   )
 
-  // Build a lookup: fileId -> local upload bytes (used by FileRow for XHR progress).
   const localByFileId = useMemo(() => {
     const m = new Map<string, { uploaded: number; total: number }>()
-    for (const u of uploading) {
-      if (u.fileId != null) {
-        m.set(u.fileId, { uploaded: u.uploaded, total: u.total })
-      }
-    }
+    for (const u of uploading) if (u.fileId) m.set(u.fileId, { uploaded: u.uploaded, total: u.total })
     return m
   }, [uploading])
 
-  // Feed the bucket dropzone a unified in-flight list. Combines:
-  //  - local XHR uploads from `uploading` state (phase 'starting' or 'xhr')
-  //  - server-side chunking from /api/files `progress` field (phase 'server')
   const bucketUploads: InFlightUpload[] = useMemo(() => {
     const out: InFlightUpload[] = []
-    // First, anything the browser is actively PUT-ing to MinIO.
-    const localFileIds = new Set<string>()
+    const known = new Set<string>()
     for (const u of uploading) {
-      if (u.fileId != null) localFileIds.add(u.fileId)
+      if (u.fileId) known.add(u.fileId)
       out.push({
         displayName: u.displayName,
         uploaded: u.uploaded,
@@ -136,10 +127,9 @@ export default function HomePage() {
         phase: u.fileId == null ? 'starting' : u.uploaded < u.total ? 'xhr' : 'server',
       })
     }
-    // Then server-side chunking for files that have progress but no local xhr.
     for (const f of files) {
-      if (localFileIds.has(f.id)) continue
-      if (f.state === 'hot_ready' && f.progress != null && f.progress.totalBytes > 0 && f.progress.totalUploaded < f.progress.totalBytes) {
+      if (known.has(f.id)) continue
+      if (f.state === 'hot_ready' && f.progress && f.progress.totalBytes > 0 && f.progress.totalUploaded < f.progress.totalBytes) {
         out.push({
           displayName: f.name,
           uploaded: f.progress.totalUploaded,
@@ -151,132 +141,125 @@ export default function HomePage() {
     return out
   }, [uploading, files])
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return files
+    return files.filter((f) => f.name.toLowerCase().includes(q))
+  }, [files, query])
+
+  // Counts for sidebar badges.
+  const counts = useMemo(() => {
+    const c = { total: files.length, uploading: 0, ready: 0, secured: 0, failed: 0 }
+    for (const f of files) {
+      if (f.state === 'uploading') c.uploading++
+      else if (f.state === 'hot_ready') c.ready++
+      else if (f.state === 'pdp_committed') c.secured++
+      else if (f.state === 'failed') c.failed++
+    }
+    return c
+  }, [files])
+
   return (
-    <main className="relative z-10 mx-auto w-full max-w-5xl px-6 pb-24 pt-10 sm:px-10">
-      {/* Header */}
-      <header className="mb-10 flex items-start gap-5">
-        <img
-          src="/brand/filbucket-mark.svg"
-          alt=""
-          width={56}
-          height={56}
-          className="mt-1 drop-shadow-[0_4px_12px_rgba(184,73,24,0.22)]"
-        />
-        <div className="min-w-0">
-          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-            FilBucket
-          </p>
-          <h1
-            className="font-serif text-[clamp(2.2rem,5.5vw,3.6rem)] font-medium leading-[1.04] tracking-tight text-ink"
-            style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
-          >
-            Your files,{' '}
-            <em
-              className="not-italic text-accent"
-              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 144' }}
-            >
-              kept safe
-            </em>{' '}
-            in the background.
-          </h1>
-          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-ink-soft">
-            Drop anything. It lands instantly, and we quietly secure it with redundant,
-            verifiable storage. No wallets, no jargon.
-          </p>
-        </div>
-      </header>
+    <div className="relative z-10 min-h-screen">
+      <div className="mx-auto grid min-h-screen w-full max-w-[1440px] grid-cols-[260px_1fr]">
+        <Sidebar counts={counts} />
 
-      {!configOk && (
-        <div className="mb-6 rounded-xl border border-warn/30 bg-warn/5 px-5 py-4 text-sm text-warn">
-          Missing <code className="font-mono">NEXT_PUBLIC_DEV_USER_ID</code> /{' '}
-          <code className="font-mono">NEXT_PUBLIC_DEFAULT_BUCKET_ID</code>. Run the server
-          seed, paste into <code>.env</code>, restart.
-        </div>
-      )}
-      {error && (
-        <div className="mb-6 rounded-xl border border-err/30 bg-err/5 px-5 py-4 text-sm text-err">
-          {error}
-        </div>
-      )}
-
-      {/* The bucket — now carries its own progress tray. */}
-      <BucketDropzone onFiles={onFiles} uploads={bucketUploads} />
-
-      {/* Library */}
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-            Library · {files.length} {files.length === 1 ? 'item' : 'items'}
-          </h2>
-        </div>
-
-        {files.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_1px_0_rgba(23,21,19,0.03),0_12px_24px_-18px_rgba(23,21,19,0.12)]">
-            <div
-              className="grid gap-3 border-b border-line bg-paper/80 px-4 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-mute"
-              style={{ gridTemplateColumns: 'minmax(0,1fr) 88px 170px 80px 32px' }}
-            >
-              <span>Name</span>
-              <span className="text-right">Size</span>
-              <span>Status</span>
-              <span className="text-right">Added</span>
-              <span />
+        <main className="flex flex-col px-8 pb-20 pt-8 lg:px-12">
+          {/* Top bar */}
+          <header className="mb-8 flex items-center gap-4">
+            <div className="flex-1">
+              <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink">Bucket</h1>
+              <p className="mt-1 text-[13px] text-ink-soft">
+                {counts.total === 0
+                  ? 'Your bucket is empty. Drop anything below to get started.'
+                  : `${counts.total} ${counts.total === 1 ? 'item' : 'items'}${counts.uploading + counts.ready > 0 ? ` · ${counts.uploading + counts.ready} still saving` : ''}`}
+              </p>
             </div>
-            <ul className="divide-y divide-line/60">
-              {files.map((f) => {
-                const local = localByFileId.get(f.id)
-                return (
-                  <li key={f.id}>
-                    <FileRow
-                      file={f}
-                      localUploaded={local?.uploaded}
-                      localTotal={local?.total}
-                      selected={selectedId === f.id}
-                      onSelect={() => setSelectedId(f.id)}
-                      onPreview={() => setPreviewFor(f)}
-                      onDelete={async () => {
-                        const verb =
-                          f.state === 'failed'
-                            ? 'Dismiss this failed upload?'
-                            : `Delete “${f.name}”?`
-                        if (!window.confirm(verb)) return
-                        try {
-                          await deleteFile(f.id)
-                          if (selectedId === f.id) setSelectedId(null)
-                          await refresh()
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : String(err))
-                        }
-                      }}
-                    />
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )}
-      </section>
+            <SearchField value={query} onChange={setQuery} inputRef={searchRef} />
+          </header>
 
-      {/* Footer */}
-      <footer className="mt-16 flex items-center justify-between border-t border-line pt-5 text-[11px] text-ink-mute">
-        <p
-          className="font-mono uppercase tracking-[0.22em]"
-          title="Internal dev environment, running on Filecoin calibration testnet."
-        >
-          Dev · Calibration
-        </p>
-        <a
-          href="#"
-          className="group inline-flex items-center gap-2 opacity-70 transition-opacity hover:opacity-100"
-          title="How your files stay safe"
-        >
-          <span className="font-mono uppercase tracking-wider">Stored on</span>
-          <img src="/brand/filecoin.svg" alt="Filecoin" width={14} height={14} />
-          <span className="font-sans text-[12px] font-medium text-ink-soft">Filecoin</span>
-        </a>
-      </footer>
+          {!configOk && (
+            <div className="mb-6 rounded-tile border border-warn/20 bg-warn-fill px-5 py-4 text-[13px] text-warn">
+              <strong className="font-semibold">Almost there.</strong> Missing{' '}
+              <code className="font-mono">NEXT_PUBLIC_DEV_USER_ID</code>/
+              <code className="font-mono">NEXT_PUBLIC_DEFAULT_BUCKET_ID</code>. Restart the dev stack.
+            </div>
+          )}
+          {error && (
+            <div className="mb-6 flex items-start gap-3 rounded-tile border border-err/20 bg-err-fill px-5 py-4 text-[13px] text-err">
+              <svg viewBox="0 0 20 20" className="mt-0.5 h-4 w-4 shrink-0" fill="currentColor">
+                <path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-1 5h2v6H9V7Zm0 7h2v2H9v-2Z" />
+              </svg>
+              <span className="min-w-0 break-words">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold hover:bg-err/10"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <BucketDropzone onFiles={onFiles} uploads={bucketUploads} />
+
+          {/* Library */}
+          <section className="mt-10 flex-1">
+            <div className="mb-3 flex items-baseline justify-between px-1">
+              <h2 className="text-[15px] font-semibold text-ink">
+                {query ? 'Results' : 'Recent'}
+              </h2>
+              <span className="font-mono text-[11px] text-ink-mute">
+                {filtered.length} {filtered.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+
+            {filtered.length === 0 ? (
+              <EmptyState query={query} />
+            ) : (
+              <div className="overflow-hidden rounded-tile bg-surface shadow-sm ring-1 ring-line/60">
+                <div className="grid items-center gap-4 border-b border-line/60 bg-surface-sunk/50 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-mute grid-cols-[44px_minmax(0,1fr)_96px_auto_180px]">
+                  <span />
+                  <span>Name</span>
+                  <span className="text-right">Size</span>
+                  <span>Status</span>
+                  <span className="text-right">Added</span>
+                </div>
+                <ul className="divide-y divide-line/40">
+                  {filtered.map((f) => {
+                    const local = localByFileId.get(f.id)
+                    return (
+                      <li key={f.id}>
+                        <FileRow
+                          file={f}
+                          localUploaded={local?.uploaded}
+                          localTotal={local?.total}
+                          selected={selectedId === f.id}
+                          onSelect={() => setSelectedId(f.id)}
+                          onPreview={() => setPreviewFor(f)}
+                          onDelete={async () => {
+                            const verb =
+                              f.state === 'failed'
+                                ? 'Dismiss this failed upload?'
+                                : `Delete "${f.name.split('/').pop()}"?`
+                            if (!window.confirm(verb)) return
+                            try {
+                              await deleteFile(f.id)
+                              if (selectedId === f.id) setSelectedId(null)
+                              await refresh()
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : String(e))
+                            }
+                          }}
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
 
       {selectedId && (
         <FileDetailPanel
@@ -295,35 +278,185 @@ export default function HomePage() {
           onClose={() => setPreviewFor(null)}
         />
       )}
-    </main>
+    </div>
   )
 }
 
-function EmptyState() {
+function Sidebar({
+  counts,
+}: {
+  counts: { total: number; uploading: number; ready: number; secured: number; failed: number }
+}) {
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl border border-dashed border-line bg-paper-raised/50 px-8 py-14 text-center"
+    <aside className="sticky top-0 flex h-screen flex-col gap-6 px-6 py-8 fb-glass-sunk">
+      {/* Brand */}
+      <div className="flex items-center gap-2.5">
+        <img src="/brand/filbucket-mark.svg" alt="" width={32} height={32} />
+        <span className="text-[17px] font-bold tracking-[-0.02em] text-ink">FilBucket</span>
+      </div>
+
+      <nav className="space-y-1">
+        <SideItem active label="Bucket" count={counts.total}>
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <path d="M4 7h12l-1 9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L4 7Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+            <path d="M7 7V5a3 3 0 1 1 6 0v2" stroke="currentColor" strokeWidth="1.6" />
+          </svg>
+        </SideItem>
+        <SideItem label="Recents" count={counts.uploading + counts.ready > 0 ? counts.uploading + counts.ready : undefined}>
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M10 6v4l2.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+        </SideItem>
+        <SideItem label="Shared">
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <circle cx="6" cy="7" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="14" cy="7" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M3 15c0-2 1.5-3.5 3.5-3.5S10 13 10 15M10 15c0-2 1.5-3.5 3.5-3.5S17 13 17 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </SideItem>
+        <SideItem label="Trash">
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+            <path d="M5 6h10M8 6V4h4v2M7 6l.6 10a1 1 0 0 0 1 .95h2.8a1 1 0 0 0 1-.95L13 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </SideItem>
+      </nav>
+
+      <div className="mt-2 border-t border-line/60 pt-5">
+        <p className="px-2 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-mute">Status</p>
+        <div className="mt-2 space-y-1">
+          <StatusLine dot="bg-mint-deep" label="Secured" count={counts.secured} />
+          <StatusLine dot="bg-lavender-deep" label="Saving" count={counts.ready} />
+          <StatusLine dot="bg-sky-deep" label="Uploading" count={counts.uploading} />
+          {counts.failed > 0 && <StatusLine dot="bg-err" label="Failed" count={counts.failed} />}
+        </div>
+      </div>
+
+      {/* Storage chip (fake for now, wire later). */}
+      <div className="mt-auto rounded-tile bg-surface/80 p-4 shadow-xs ring-1 ring-line/60">
+        <div className="flex items-center justify-between text-[11px]">
+          <span className="font-mono uppercase tracking-wider text-ink-mute">Storage</span>
+          <span className="font-mono font-semibold text-ink-soft">Calibration</span>
+        </div>
+        <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-line">
+          <div className="h-full w-[8%] rounded-full bg-sky-deep" />
+        </div>
+        <p className="mt-2 text-[12px] text-ink-soft">
+          <span className="font-semibold text-ink">Plenty of room.</span> You&apos;re on the dev plan.
+        </p>
+      </div>
+    </aside>
+  )
+}
+
+function SideItem({
+  active,
+  label,
+  count,
+  children,
+}: {
+  active?: boolean
+  label: string
+  count?: number
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      className={[
+        'group flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-[14px] transition-colors duration-150',
+        active
+          ? 'bg-sky-fill text-sky-deep'
+          : 'text-ink-soft hover:bg-surface/80 hover:text-ink',
+      ].join(' ')}
     >
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(ellipse 40% 60% at 50% 100%, rgba(184, 73, 24, 0.08), transparent 70%)',
+      <span className={active ? 'text-sky-deep' : 'text-ink-mute group-hover:text-ink-soft'}>
+        {children}
+      </span>
+      <span className="flex-1 font-medium">{label}</span>
+      {count != null && count > 0 && (
+        <span
+          className={[
+            'rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold',
+            active ? 'bg-sky-deep/10 text-sky-deep' : 'bg-surface-sunk text-ink-mute',
+          ].join(' ')}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  )
+}
+
+function StatusLine({ dot, label, count }: { dot: string; label: string; count: number }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+      <span className="flex-1 text-[12px] text-ink-soft">{label}</span>
+      <span className="font-mono text-[11px] font-medium text-ink-mute">{count}</span>
+    </div>
+  )
+}
+
+function SearchField({
+  value,
+  onChange,
+  inputRef,
+}: {
+  value: string
+  onChange: (v: string) => void
+  inputRef?: React.RefObject<HTMLInputElement | null>
+}) {
+  return (
+    <div className="group relative w-72">
+      <svg
+        viewBox="0 0 20 20"
+        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-mute"
+        fill="none"
+      >
+        <circle cx="9" cy="9" r="5" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M13 13l3 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+      <input
+        ref={inputRef as React.RefObject<HTMLInputElement>}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            onChange('')
+            ;(e.target as HTMLInputElement).blur()
+          }
         }}
+        placeholder="Search your bucket"
+        className="w-full rounded-pill bg-surface-sunk py-2 pl-9 pr-16 text-[13px] text-ink placeholder:text-ink-mute ring-1 ring-transparent transition-all duration-150 focus:bg-surface focus:outline-none focus:ring-sky-deep/30"
       />
-      <div className="relative mx-auto mb-5 h-16 w-16 opacity-70">
+      {!value && (
+        <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md bg-surface px-1.5 py-0.5 font-mono text-[10px] font-semibold text-ink-mute shadow-xs ring-1 ring-line">
+          ⌘K
+        </kbd>
+      )}
+    </div>
+  )
+}
+
+function EmptyState({ query }: { query: string }) {
+  if (query) {
+    return (
+      <div className="rounded-tile bg-surface px-8 py-12 text-center shadow-xs ring-1 ring-line/60">
+        <p className="text-[15px] font-semibold text-ink">No matches for &ldquo;{query}&rdquo;</p>
+        <p className="mt-1 text-[13px] text-ink-soft">Try a different name or clear the search.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-tile bg-surface px-8 py-14 text-center shadow-xs ring-1 ring-line/60">
+      <div className="mx-auto mb-4 h-14 w-14 opacity-80">
         <img src="/brand/filbucket-mark.svg" alt="" className="h-full w-full" />
       </div>
-      <p
-        className="font-serif text-2xl italic text-ink-soft"
-        style={{ fontVariationSettings: '"SOFT" 100, "opsz" 100' }}
-      >
-        An empty bucket, patiently waiting.
-      </p>
-      <p className="mt-2 text-[13px] text-ink-mute">
-        Drop something in above. First it goes{' '}
-        <span className="font-medium text-ink-soft">Ready</span>, then{' '}
-        <span className="font-medium text-ok">Secured</span>.
+      <p className="text-[15px] font-semibold text-ink">Your bucket is empty.</p>
+      <p className="mt-1.5 text-[13px] text-ink-soft">
+        First drop, first file. Everything else comes easy from here.
       </p>
     </div>
   )
