@@ -460,12 +460,15 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
     EX_FIL_HUMAN="${EX_FIL%.*}"
     EX_USDFC_HUMAN="${EX_USDFC%.*}"
     info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
-    if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+    # MIN_USDFC_FOR_SETUP must match PHASE0_DEPOSIT_USDFC in
+    # apps/server/src/scripts/setup-ops-wallet.ts (currently 10).
+    MIN_USDFC_FOR_SETUP=10
+    if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
       warn "Wallet exists but isn't fully funded yet - finishing the funding now."
 
       # Try the FilBucket faucet first if BOTH are missing (clean fresh wallet).
       # Single drip covers tFIL + USDFC.
-      if [[ "$EX_FIL_HUMAN" == "0" ]] && [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+      if [[ "$EX_FIL_HUMAN" == "0" ]] && [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
         echo
         step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
         FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
@@ -507,10 +510,10 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         EX_FIL_HUMAN="${EX_FIL%.*}"
       fi
 
-      # If we have tFIL but no USDFC, try the FilBucket faucet first (cheap,
-      # no collateral lock). Only fall back to the Trove mint if the faucet
-      # rejects (already used, dry, etc.).
-      if [[ "$EX_FIL_HUMAN" != "0" ]] && [[ "$EX_USDFC_HUMAN" == "0" ]]; then
+      # If we have tFIL but not enough USDFC for the FWSS deposit, try the
+      # FilBucket faucet first (cheap, no collateral lock). Only fall back
+      # to the Trove mint if the faucet rejects (already used, dry, etc.).
+      if [[ "$EX_FIL_HUMAN" != "0" ]] && [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
         echo
         step "Trying FilBucket faucet for the USDFC top-up"
         FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
@@ -547,9 +550,9 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
       EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
       EX_FIL_HUMAN="${EX_FIL%.*}"
       EX_USDFC_HUMAN="${EX_USDFC%.*}"
-      # setup-wallet calls Filecoin Pay deposit which requires USDFC > 0.
-      # Skip noisily-failing run when the wallet is still empty.
-      if [[ "$EX_USDFC_HUMAN" != "0" ]]; then
+      # setup-wallet calls Filecoin Pay deposit which requires >= 10 USDFC.
+      # Skip the noisy failure path when we still don't have enough.
+      if [[ "${EX_USDFC_HUMAN:-0}" -ge "$MIN_USDFC_FOR_SETUP" ]]; then
         echo
         step "Running setup-wallet (Filecoin Pay + FWSS approval)"
         if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
@@ -558,7 +561,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         fi
       else
         echo
-        warn "Skipping setup-wallet — wallet still has 0 USDFC."
+        warn "Skipping setup-wallet — wallet has only ${EX_USDFC_HUMAN:-0} USDFC, need >= $MIN_USDFC_FOR_SETUP."
         info "  Top up the wallet, then run:"
         info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       fi
@@ -806,15 +809,18 @@ for PORT in 3010 4000; do
 done
 
 step "Starting the dev stack in the background"
-# macOS default ulimit -n is 256 which Next.js watcher blows through immediately.
-# Bump to 10240 for the child process.
+# macOS default ulimit -n is 256 which Next.js watcher blows through.
+# We bump it AND switch watchpack to polling mode as a belt-and-suspenders
+# fix. WATCHPACK_POLLING avoids fsevents entirely, which is what actually
+# eliminates the EMFILE storm + the resulting 404-on-/ symptom.
 (
   ulimit -n 10240 2>/dev/null || true
   cd "$INSTALL_DIR"
   # Explicit </dev/null is critical: when nohup inherits a piped stdin
   # (e.g. `curl | bash`), Next.js dev sometimes wedges and serves 404
   # for routes that should compile fine. Disconnecting stdin fixes it.
-  nohup pnpm dev > "$LOG_FILE" 2>&1 < /dev/null &
+  WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=1 \
+    nohup pnpm dev > "$LOG_FILE" 2>&1 < /dev/null &
   echo $! > "$PID_FILE"
   disown $! 2>/dev/null || true
 )
