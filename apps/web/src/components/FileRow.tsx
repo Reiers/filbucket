@@ -49,8 +49,8 @@ export function FileRow({
   const dirpath = parts.length > 1 ? parts.slice(0, -1).join('/') : ''
 
   const rowCls = [
-    'group relative grid items-center gap-4 px-4 py-2.5 transition-colors duration-150',
-    'grid-cols-[44px_minmax(0,1fr)_96px_auto_auto]',
+    'group relative grid items-center gap-4 px-4 py-2.5 transition-colors duration-150 cursor-pointer',
+    'grid-cols-[44px_minmax(0,1fr)_96px_140px_180px]',
     selected ? 'bg-sky-fill/70' : 'hover:bg-surface-sunk/70',
   ].join(' ')
 
@@ -93,11 +93,13 @@ export function FileRow({
         {fmtBytes(file.sizeBytes)}
       </span>
 
-      {/* State pill */}
-      <StatePill file={file} />
+      {/* State pill — centered in its column */}
+      <div className="flex justify-center">
+        <StatePill file={file} />
+      </div>
 
       {/* Added / actions toggle. On hover the added label fades out for actions. */}
-      <div className="relative w-[180px]">
+      <div className="relative h-8">
         <span className="absolute inset-y-0 right-0 flex items-center font-mono text-[11px] text-ink-mute opacity-100 transition-opacity duration-150 group-hover:opacity-0">
           {fmtRelative(file.createdAt)}
         </span>

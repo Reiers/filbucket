@@ -1,85 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-label="FilBucket" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" aria-label="FilBucket" role="img">
   <!--
-    FilBucket mark — v2, iCloud-style.
-    A rounded pastel bucket tile, no text glyph. Soft sky-blue gradient
-    bucket body, rounded corners everywhere, one subtle highlight.
-    Scales cleanly from 16px (favicon) to 256px (app icon).
+    FilBucket mark — v3, high resolution (128×128 viewBox).
+    Bucket profile with volumetric shading, inner rim shadow, rolled-lip highlight,
+    and a properly centered Filecoin 'F' glyph in white on the front face.
+    Designed to sit cleanly against both light and dark surfaces.
   -->
   <defs>
-    <!-- Sky-blue gradient (primary bucket body). -->
-    <linearGradient id="fb-sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#B7DCFF"/>
-      <stop offset="100%" stop-color="#4FA7F5"/>
+    <!-- Bucket body: sky gradient with real dimensionality (side-lit). -->
+    <linearGradient id="m-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#B9DEFF"/>
+      <stop offset="45%" stop-color="#6BB3F7"/>
+      <stop offset="100%" stop-color="#2E7DC8"/>
     </linearGradient>
 
-    <!-- Deeper rim + handle. -->
-    <linearGradient id="fb-rim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#3A9CF0"/>
-      <stop offset="100%" stop-color="#1E7FD8"/>
+    <!-- Rolled lip: deeper blue, sits under the rim. -->
+    <linearGradient id="m-lip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#4FA7F5"/>
+      <stop offset="100%" stop-color="#1E6FB8"/>
     </linearGradient>
 
-    <!-- Inner mouth shadow — subtle, warm, not too dark. -->
-    <linearGradient id="fb-mouth" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#1E5C9A"/>
-      <stop offset="100%" stop-color="#3A8BD6"/>
+    <!-- Handle: same family, slightly deeper. -->
+    <linearGradient id="m-handle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#7BBDF7"/>
+      <stop offset="100%" stop-color="#2A78C2"/>
     </linearGradient>
 
-    <!-- Drop-fill (the tiny droplet inside). -->
-    <linearGradient id="fb-drop" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"  stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#EAF4FF"/>
+    <!-- Inner mouth gradient: deep to shallow to give depth. -->
+    <radialGradient id="m-mouth" cx="0.5" cy="0.4" r="0.8">
+      <stop offset="0%"  stop-color="#0C3F76"/>
+      <stop offset="100%" stop-color="#205C98"/>
+    </radialGradient>
+
+    <!-- Left-side highlight. -->
+    <linearGradient id="m-hi" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
+
+    <!-- Soft drop-shadow filter for 'lifted from surface' feel. -->
+    <filter id="m-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="2.5" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.25"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
 
-  <!-- Soft ambient shadow under the bucket, adds depth against light bg. -->
-  <ellipse cx="32" cy="58" rx="18" ry="2.5" fill="#0071e3" opacity="0.10"/>
+  <!-- Ambient ground shadow (soft ellipse). -->
+  <ellipse cx="64" cy="119" rx="36" ry="4" fill="#0A4C8A" opacity="0.14"/>
 
-  <!-- Handle: soft arc, rounded caps, sits behind the bucket lip. -->
-  <path d="M18 18 C 18 6, 46 6, 46 18"
+  <!-- Handle (renders behind bucket top). -->
+  <path d="M 36 36 C 36 14, 92 14, 92 36"
         fill="none"
-        stroke="url(#fb-rim)"
-        stroke-width="3"
+        stroke="url(#m-handle)"
+        stroke-width="5"
         stroke-linecap="round"/>
 
-  <!-- Bucket body: rounded-corner trapezoid (pail taper).
-       Rounded top corners via cubic curves, rounded bottom via arcs. -->
+  <!-- Handle attachments (small lugs where the handle meets the body). -->
+  <circle cx="36" cy="36" r="3.5" fill="#2A78C2"/>
+  <circle cx="92" cy="36" r="3.5" fill="#2A78C2"/>
+
+  <!-- BUCKET BODY.
+       Tapered pail profile, rounded top + bottom corners, slight side curve. -->
   <path d="
-      M 11 19
-      Q 11 16, 14 16
-      L 50 16
-      Q 53 16, 53 19
-      L 49 54
-      Q 48.5 57, 45.5 57
-      L 18.5 57
-      Q 15.5 57, 15 54
+      M 22 36
+      Q 22 30, 28 30
+      L 100 30
+      Q 106 30, 106 36
+      L 98 110
+      Q 97 116, 91 116
+      L 37 116
+      Q 31 116, 30 110
       Z"
-    fill="url(#fb-sky)"/>
+    fill="url(#m-body)"
+    filter="url(#m-shadow)"/>
 
-  <!-- Subtle front highlight, upper-left quadrant only. -->
+  <!-- Left-edge highlight along the body curve. Subtle glossy sheen. -->
   <path d="
-      M 15 22
-      Q 15 19.5, 17 19
-      L 27 18.5"
+      M 24 40
+      L 32 108
+      Q 32.5 111, 35 112"
     fill="none"
-    stroke="#FFFFFF"
-    stroke-width="1.5"
+    stroke="url(#m-hi)"
+    stroke-width="5"
     stroke-linecap="round"
-    opacity="0.55"/>
+    opacity="0.6"/>
 
-  <!-- Bucket mouth: soft ellipse with inner mouth gradient. -->
-  <ellipse cx="32" cy="17" rx="21" ry="3.2" fill="url(#fb-mouth)"/>
+  <!-- Filecoin 'F' glyph, white, centered on the bucket face.
+       Glyph extracted from brand/filecoin.svg viewBox 0..40.
+       Natural glyph bounds ~ (10,6)–(28,34), centered on (19,20) at native scale.
+       Target center on bucket face: x=64 (bucket center), y=70 (upper-third of body).
+       Scale factor 2.0: glyph becomes ~36 wide × 56 tall.
+       translate = (64 - 19*2, 70 - 20*2) = (26, 30). -->
+  <g transform="translate(26 30) scale(2.0)" fill="#FFFFFF">
+    <path
+      fill-rule="evenodd" clip-rule="evenodd"
+      d="M21.9 17.6l-.6 3.2 5.7.8-.4 1.5-5.6-.8c-.4 1.3-.6 2.7-1.1 3.9-.5 1.4-1 2.8-1.6 4.1-.8 1.7-2.2 2.9-4.1 3.2-1.1.2-2.3.1-3.2-.6-.3-.2-.6-.6-.6-.9 0-.4.2-.9.5-1.1.2-.1.7 0 1 .1.3.3.6.7.8 1.1.6.8 1.4.9 2.2.3.9-.8 1.4-1.9 1.7-3 .6-2.4 1.2-4.7 1.7-7.1v-.4l-5.3-.8.2-1.5 5.5.8.7-3.1-5.7-.9.2-1.6 5.9.8c.2-.6.3-1.1.5-1.6.5-1.8 1-3.6 2.2-5.2 1.2-1.6 2.6-2.6 4.7-2.5.9 0 1.8.3 2.4 1 .1.1.3.3.3.5 0 .4 0 .9-.3 1.2-.4.3-.9.2-1.3-.2-.3-.3-.5-.6-.8-.9-.6-.8-1.5-.9-2.2-.2-.5.5-1 1.2-1.3 1.9-.7 2.1-1.2 4.3-1.9 6.5l5.5.8-.4 1.5-5.3-.8"
+    />
+  </g>
 
-  <!-- A single droplet inside, dead-center on the body front.
-       This is the brand anchor — a tiny, perfect, centered water drop. -->
-  <path d="
-      M 32 28
-      C 32 28, 27.5 34, 27.5 38.5
-      C 27.5 42, 29.5 44, 32 44
-      C 34.5 44, 36.5 42, 36.5 38.5
-      C 36.5 34, 32 28, 32 28 Z"
-    fill="url(#fb-drop)"/>
+  <!-- Rolled lip (rim) — sits ON TOP of the body, covers the top edge. -->
+  <ellipse cx="64" cy="30" rx="42" ry="6" fill="url(#m-lip)"/>
 
-  <!-- Droplet highlight: tiny gloss on the upper-left. -->
-  <path d="M 30 36 C 29.5 37.5, 29.5 39, 30 40"
-        fill="none" stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round" opacity="0.9"/>
+  <!-- Inner mouth (the hole you drop files into). -->
+  <ellipse cx="64" cy="30" rx="38" ry="4.2" fill="url(#m-mouth)"/>
+
+  <!-- Top rim highlight stripe. -->
+  <path d="M 27 30 Q 64 24, 101 30"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        opacity="0.55"/>
 </svg>

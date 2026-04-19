@@ -34,10 +34,27 @@ export const metadata: Metadata = {
   },
 }
 
+// Inline script runs BEFORE React hydration so there's no flash of
+// light-then-dark (or vice versa). Reads localStorage first, falls back
+// to prefers-color-scheme.
+const themeInit = `
+(function() {
+  try {
+    var saved = localStorage.getItem('fb-theme');
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var theme = saved || (dark ? 'dark' : 'light');
+    document.documentElement.dataset.theme = theme;
+  } catch (e) {}
+})();
+`
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body className="min-h-screen bg-canvas text-ink antialiased selection:bg-[color:var(--accent-sky)]/30">
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInit }} />
+      </head>
+      <body className="min-h-screen bg-canvas text-ink antialiased selection:bg-[color:var(--accent-sky)]/30" suppressHydrationWarning>
         {children}
       </body>
     </html>

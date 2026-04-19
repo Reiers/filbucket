@@ -7,6 +7,10 @@ import { ShareModal } from './ShareModal'
 import { FilePreview } from './FilePreview'
 import { classifyPreview, fmtBytes } from '../lib/files'
 
+/**
+ * Right-slide sheet showing full file detail.
+ * iCloud style: frosted glass card, rounded, soft shadow. Click outside to close.
+ */
 export function FileDetailPanel({
   fileId,
   onClose,
@@ -14,7 +18,6 @@ export function FileDetailPanel({
 }: {
   fileId: string
   onClose: () => void
-  /** Open the big preview modal from outside \u2014 optional. */
   onPreview?: (f: FileDTO) => void
 }) {
   const [data, setData] = useState<FileDetailDTO | null>(null)
@@ -39,6 +42,15 @@ export function FileDetailPanel({
     }
   }, [fileId])
 
+  // Esc to close.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   const canPreview =
     data != null &&
     (data.state === 'hot_ready' || data.state === 'pdp_committed') &&
@@ -46,57 +58,61 @@ export function FileDetailPanel({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-ink/25 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex justify-end bg-ink/20 backdrop-blur-[3px] fb-animate-fade-in"
       onClick={onClose}
     >
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="h-full w-full max-w-md overflow-y-auto border-l border-line bg-paper-raised shadow-[-20px_0_60px_rgba(23,21,19,0.12)]"
+        className="fb-animate-sheet-up relative my-3 mr-3 flex h-[calc(100vh-1.5rem)] w-full max-w-[420px] flex-col overflow-hidden rounded-tile-lg bg-surface shadow-xl ring-1 ring-line/60"
       >
-        <div className="flex items-start justify-between border-b border-line px-6 py-5">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">
-              File
-            </p>
-            <h2
-              className="mt-1 font-serif text-2xl leading-tight text-ink"
-              style={{ fontVariationSettings: '"SOFT" 100, "opsz" 110' }}
-            >
-              Details
-            </h2>
-          </div>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-line/60 px-6 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mute">
+            File details
+          </p>
           <button
             onClick={onClose}
-            className="rounded-full border border-line px-3 py-1 text-sm text-ink-soft transition-colors hover:border-line-strong hover:bg-paper"
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition-all duration-150 ease-spring hover:scale-[1.08] hover:bg-surface-sunk hover:text-ink active:scale-95"
           >
-            Close
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+              <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
 
-        <div className="px-6 py-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-5">
           {err && (
-            <div className="mb-6 rounded-xl border border-err/30 bg-err/5 px-4 py-3 text-sm text-err">
+            <div className="mb-6 rounded-tile border border-err/20 bg-err-fill px-4 py-3 text-[13px] text-err">
               {err}
+            </div>
+          )}
+
+          {!data && !err && (
+            <div className="space-y-3 py-6">
+              <div className="fb-shimmer h-32 rounded-tile bg-surface-sunk" />
+              <div className="fb-shimmer h-5 w-3/4 rounded-full bg-surface-sunk" />
+              <div className="fb-shimmer h-4 w-1/2 rounded-full bg-surface-sunk" />
             </div>
           )}
 
           {data && (
             <>
               {canPreview && (
-                <div className="mb-6">
+                <div className="mb-6 overflow-hidden rounded-tile bg-surface-sunk">
                   <FilePreview
                     src={downloadUrl(data.id)}
                     mimeType={data.mimeType}
                     name={data.name}
                     sizeBytes={data.sizeBytes}
-                    maxHeight={260}
-                    rounded="0.85rem"
+                    maxHeight={280}
+                    rounded="0.75rem"
                   />
                   {onPreview && classifyPreview(data.mimeType, data.name) !== 'audio' && (
                     <button
                       type="button"
                       onClick={() => onPreview({ ...data })}
-                      className="mt-2 font-mono text-[10px] uppercase tracking-wider text-ink-mute underline decoration-line-strong underline-offset-[3px] transition-colors hover:text-accent hover:decoration-accent"
+                      className="w-full border-t border-line/60 py-2 text-[12px] font-semibold text-sky-deep transition-colors hover:bg-sky-fill/40"
                     >
                       Open full preview
                     </button>
@@ -104,45 +120,68 @@ export function FileDetailPanel({
                 </div>
               )}
 
-              <div className="mb-8 break-all font-serif text-xl leading-snug text-ink">
-                {data.name}
+              {/* File name + type chip */}
+              <div className="mb-6">
+                <h2 className="break-words text-[20px] font-bold leading-[1.2] tracking-[-0.02em] text-ink">
+                  {(data.name.split('/').pop() ?? data.name)}
+                </h2>
+                {data.name.includes('/') && (
+                  <p className="mt-1 font-mono text-[11px] text-ink-mute">
+                    in {data.name.split('/').slice(0, -1).join('/')}
+                  </p>
+                )}
               </div>
 
-              <dl className="space-y-5 text-sm">
-                <Row label="Status" value={FILE_STATE_LABEL[data.state as FileState] ?? 'Unknown'} />
-                <Row label="Size" value={fmtBytes(data.sizeBytes)} />
-                <Row label="Type" value={data.mimeType || 'file'} />
-                <Row label="Uploaded" value={new Date(data.createdAt).toLocaleString()} />
-                <Row label="Updated" value={new Date(data.updatedAt).toLocaleString()} />
-              </dl>
-
-              <div className="mt-8 flex flex-wrap gap-3">
+              {/* Action buttons */}
+              <div className="mb-7 flex flex-wrap gap-2">
                 <a
                   href={downloadUrl(data.id)}
-                  className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5"
+                  download
+                  className="inline-flex items-center gap-2 rounded-pill bg-sky-deep px-4 py-2 text-[13px] font-semibold text-white shadow-sm transition-all duration-200 ease-spring hover:scale-[1.02] hover:shadow-md active:scale-[0.98]"
                 >
-                  Download
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3v14" />
-                    <path d="m6 11 6 6 6-6" />
-                    <path d="M4 21h16" />
+                  <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                    <path d="M10 4v10M6 10l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 16h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
+                  Download
                 </a>
                 <button
                   type="button"
                   onClick={() => setShowShare(true)}
-                  className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-paper-raised px-5 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-paper"
+                  className="inline-flex items-center gap-2 rounded-pill bg-surface px-4 py-2 text-[13px] font-semibold text-ink shadow-sm ring-1 ring-line transition-all duration-200 ease-spring hover:scale-[1.02] hover:shadow-md active:scale-[0.98]"
                 >
-                  Share
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="18" cy="5" r="3" />
-                    <circle cx="6" cy="12" r="3" />
-                    <circle cx="18" cy="19" r="3" />
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                    <path d="M10 4v8M7 7l3-3 3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 14v1a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                   </svg>
+                  Share
                 </button>
               </div>
+
+              {/* Meta grid */}
+              <dl className="overflow-hidden rounded-tile bg-surface-sunk/60 ring-1 ring-line/40">
+                <MetaRow
+                  label="Status"
+                  value={<StatusChip state={data.state as FileState} />}
+                />
+                <MetaRow label="Size" value={<span className="font-mono text-[13px] text-ink">{fmtBytes(data.sizeBytes)}</span>} />
+                <MetaRow label="Kind" value={<span className="truncate text-[13px] text-ink">{humanKind(data.mimeType)}</span>} />
+                <MetaRow
+                  label="Added"
+                  value={<span className="text-[13px] text-ink">{new Date(data.createdAt).toLocaleString(undefined, {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                  })}</span>}
+                />
+                {data.updatedAt !== data.createdAt && (
+                  <MetaRow
+                    label="Updated"
+                    value={<span className="text-[13px] text-ink">{new Date(data.updatedAt).toLocaleString(undefined, {
+                      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                    })}</span>}
+                  />
+                )}
+              </dl>
+
               {showShare && (
                 <ShareModal
                   fileId={data.id}
@@ -151,26 +190,25 @@ export function FileDetailPanel({
                 />
               )}
 
-              {/* Internal-only technical details. Collapsed. */}
-              <details className="mt-10 rounded-xl border border-line bg-paper p-4 text-xs text-ink-soft">
-                <summary className="cursor-pointer font-mono uppercase tracking-wider text-ink-mute">
-                  Technical details (dev only)
+              {/* Dev-only technical details. Collapsed by default. */}
+              <details className="mt-6 rounded-tile bg-surface-sunk/40 text-[12px]">
+                <summary className="cursor-pointer px-4 py-3 font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-mute">
+                  Dev · technical
                 </summary>
-                <div className="mt-4 space-y-4">
+                <div className="space-y-4 border-t border-line/40 px-4 py-4 text-ink-soft">
                   <div>
-                    <div className="mb-1 font-mono uppercase tracking-wider text-ink-mute">
+                    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-mute">
                       Pieces
                     </div>
                     {data.pieces.length === 0 ? (
                       <div className="italic text-ink-mute">none yet</div>
                     ) : (
-                      <ul className="space-y-1 font-mono">
+                      <ul className="space-y-1 font-mono text-[11px]">
                         {data.pieces.map((p) => (
                           <li key={p.id} className="break-all">
                             {p.pieceCid}
                             <span className="text-ink-mute">
-                              {' '}
-                              · ds={p.datasetId ?? '-'} · sp={p.spProviderId ?? '-'}
+                              {' · '}ds={p.datasetId ?? '-'}{' · '}sp={p.spProviderId ?? '-'}
                             </span>
                           </li>
                         ))}
@@ -178,10 +216,10 @@ export function FileDetailPanel({
                     )}
                   </div>
                   <div>
-                    <div className="mb-1 font-mono uppercase tracking-wider text-ink-mute">
+                    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink-mute">
                       Events
                     </div>
-                    <ul className="space-y-1 font-mono">
+                    <ul className="space-y-1 font-mono text-[11px]">
                       {data.events.map((e) => (
                         <li key={e.id}>
                           <span className="text-ink-mute">
@@ -202,11 +240,42 @@ export function FileDetailPanel({
   )
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-6 border-b border-line/60 pb-4">
-      <dt className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-mute">{label}</dt>
-      <dd className="text-right text-ink">{value}</dd>
+    <div className="flex items-center justify-between gap-6 border-b border-line/40 px-4 py-3 last:border-b-0">
+      <dt className="text-[12px] font-medium text-ink-mute">{label}</dt>
+      <dd className="min-w-0 text-right">{value}</dd>
     </div>
   )
+}
+
+function StatusChip({ state }: { state: FileState }) {
+  const palettes = {
+    uploading:         { bg: 'bg-sky-fill', fg: 'text-sky-deep', dot: 'bg-sky-deep' },
+    hot_ready:         { bg: 'bg-lavender-fill', fg: 'text-lavender-deep', dot: 'bg-lavender-deep' },
+    pdp_committed:     { bg: 'bg-mint-fill', fg: 'text-mint-deep', dot: 'bg-mint-deep' },
+    archived_cold:     { bg: 'bg-surface-sunk', fg: 'text-ink-soft', dot: 'bg-ink-mute' },
+    restore_from_cold: { bg: 'bg-sunflower-fill', fg: 'text-sunflower-deep', dot: 'bg-sunflower-deep' },
+    failed:            { bg: 'bg-err-fill', fg: 'text-err', dot: 'bg-err' },
+  }[state] ?? { bg: 'bg-surface-sunk', fg: 'text-ink-soft', dot: 'bg-ink-mute' }
+
+  const label = state === 'pdp_committed' ? 'Secured' : FILE_STATE_LABEL[state] ?? 'Unknown'
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-semibold ${palettes.bg} ${palettes.fg}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${palettes.dot}`} />
+      {label}
+    </span>
+  )
+}
+
+function humanKind(mime: string): string {
+  if (!mime) return 'File'
+  if (mime === 'application/pdf') return 'PDF Document'
+  if (mime.startsWith('image/')) return `Image · ${mime.split('/')[1]?.toUpperCase()}`
+  if (mime.startsWith('video/')) return `Video · ${mime.split('/')[1]?.toUpperCase()}`
+  if (mime.startsWith('audio/')) return `Audio · ${mime.split('/')[1]?.toUpperCase()}`
+  if (mime.startsWith('text/')) return `Text · ${mime.split('/')[1] ?? ''}`
+  const last = mime.split('/').pop()
+  return last ? last.toUpperCase() : 'File'
 }
