@@ -1,6 +1,23 @@
 # Changelog
 
-## 2026-04-19 — Phase 1 finished + installer hardened
+## 2026-04-19 — Phase 1 finished + installer hardened + calibration e2e proven
+
+### Calibration end-to-end evidence
+
+With the installer running on a fresh machine, three uploads flowed cleanly
+through the full pipeline:
+
+- `client PUT → MinIO hot cache` (via presigned S3 URL)
+- `durability worker chunks & stores on 2 SPs` (`store_ok` with `copies[]`)
+- `on-chain PDP commit` (`chunk_committed` + `commit_ok` with `dataSetId`)
+- two-copy redundancy: dataset `13175` on SP 4 (`caliberation-pdp.infrafolio.com`) + dataset `13176` on SP 2 (`calib2.ezpdpz.net`)
+- both retrieval URLs serve the piece CIDs; pieces visible via the SP endpoints
+
+The `pdp_committed` state transition fires passively when the first-proof
+watcher observes `getNextChallengeEpoch` advance for the dataset (~30 min
+proving period on calibration). Calibration is now fully validated as the
+base case before mainnet migration.
+
 
 ### Added
 

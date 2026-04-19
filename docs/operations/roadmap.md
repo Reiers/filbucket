@@ -16,6 +16,14 @@ Aspirational but honest. Last updated 2026-04-19.
 
 **Done April 19, 2026.**
 
+> **End-to-end proof on calibration.** Real uploads land through the full pipeline:
+> client PUT → MinIO hot cache → durability worker chunks to SPs → on-chain PDP commit
+> → passive first-proof watcher. Currently replicating against two independent Curio
+> SPs (dataset `13175` on `infrafolio`, dataset `13176` on `ezpdpz`), both retrievable
+> via SP retrieval URLs, commits visible on the calibration explorer. The `pdp_committed`
+> state flips the moment the PDPVerifier emits `getNextChallengeEpoch` for the dataset
+> (~30-min proving period on calibration).
+
 - Streaming chunked uploads (no more 200 MiB ceiling)
 - Real chunk-level progress bars, per-SP progress events
 - Folder uploads (drag + file picker, `webkitdirectory`)

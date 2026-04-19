@@ -282,7 +282,8 @@ Builds a signed `.app` bundle and launches it. Point it at your local server via
 
 - **Phase 0** ✅ — Scaffold, calibration upload, PDP commit, first-proof watcher, share links.
 - **Phase 1** ✅ — Full dashboard redesign (iCloud-style), folder uploads, inline previews, native Mac app, dark mode, real docs.
-- **Phase 2** 🚧 **(now)** — Calibration validated end-to-end. Starting migration to **Filecoin mainnet**, Stripe billing, email + magic-link auth, aggregation for small files, private beta.
+- **End-to-end storage proven on calibration** — uploads flow client → hot cache → durability worker → two independent Curio SPs (primary `infrafolio`, secondary `ezpdpz`) → on-chain PDP commit via `FWSS.createDataSet` + `addPieces`. Every file carries a dual `dataSetId`; both copies retrievable via SP URLs. First proof observed per proving period (~30 min on calibration).
+- **Phase 2** 🚧 **(now)** — Starting migration to **Filecoin mainnet**, Stripe billing, email + magic-link auth, aggregation for small files, private beta.
 - **Phase 3** — Team buckets, S3-compatible API, Private Vault (user-held keys), iOS app, SOC 2 readiness.
 
 Full roadmap with dates in [`docs/operations/roadmap.md`](./docs/operations/roadmap.md) and [`ARCHITECTURE §11`](./ARCHITECTURE.md#11-roadmap).
