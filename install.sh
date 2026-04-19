@@ -88,6 +88,13 @@ ask()   {
   [[ "$answer" =~ ^[Yy]$ ]]
 }
 
+# Float-aware >= comparison. Bash's [[ -ge ]] is integer-only, which silently
+# rounds 0.5 -> 0 and 9.9 -> 9, breaking gas/USDFC threshold checks.
+# Usage:  if gte "$bal" "0.1"; then ...
+gte() {
+  awk -v a="$1" -v b="$2" 'BEGIN { exit !(a+0 >= b+0) }'
+}
+
 # Read just the tFIL balance.
 read_fil() {
   ( cd "$INSTALL_DIR/apps/server" && node -e "
@@ -477,18 +484,19 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
   if [[ -n "$EXISTING_ADDR" ]]; then
     EX_FIL="$(read_fil "$EXISTING_ADDR")"
     EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
-    EX_FIL_HUMAN="${EX_FIL%.*}"
-    EX_USDFC_HUMAN="${EX_USDFC%.*}"
-    info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
+    info "  Current chain balances:  tFIL ${BOLD}${EX_FIL}${RESET}   USDFC ${BOLD}${EX_USDFC}${RESET}"
     # MIN_USDFC_FOR_SETUP must match PHASE0_DEPOSIT_USDFC in
     # apps/server/src/scripts/setup-ops-wallet.ts (currently 10).
+    # MIN_TFIL_FOR_GAS is a small floor so setup-wallet can pay gas
+    # for the deposit + approveService calls (~0.05 tFIL combined).
     MIN_USDFC_FOR_SETUP=10
-    if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
+    MIN_TFIL_FOR_GAS=0.1
+    if ! gte "$EX_FIL" "$MIN_TFIL_FOR_GAS" || ! gte "$EX_USDFC" "$MIN_USDFC_FOR_SETUP"; then
       warn "Wallet exists but isn't fully funded yet - finishing the funding now."
 
       # Try the FilBucket faucet first if BOTH are missing (clean fresh wallet).
       # Single drip covers tFIL + USDFC.
-      if [[ "$EX_FIL_HUMAN" == "0" ]] && [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
+      if ! gte "$EX_FIL" "$MIN_TFIL_FOR_GAS" && ! gte "$EX_USDFC" "$MIN_USDFC_FOR_SETUP"; then
         echo
         step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
         FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
@@ -511,12 +519,10 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
       # Re-read balances after the drip attempt.
       EX_FIL="$(read_fil "$EXISTING_ADDR")"
       EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
-      EX_FIL_HUMAN="${EX_FIL%.*}"
-      EX_USDFC_HUMAN="${EX_USDFC%.*}"
 
-      # If we still need tFIL, the user has to do the faucet click - the
-      # FilBucket faucet won't drip again to the same address.
-      if [[ "$EX_FIL_HUMAN" == "0" ]]; then
+      # If we still need tFIL for gas, user has to do the chainsafe click -
+      # the FilBucket faucet won't drip again to the same address.
+      if ! gte "$EX_FIL" "$MIN_TFIL_FOR_GAS"; then
         echo
         warn "Still no tFIL. Open the chainsafe faucet manually:"
         if command -v pbcopy >/dev/null 2>&1; then
@@ -525,15 +531,14 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         fi
         open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
         info "  ⌘V → click Send Funds. Polling chain every 10s."
-        poll_tfil "$EXISTING_ADDR" || true
+        poll_tfil "$EXISTING_ADDR" "$MIN_TFIL_FOR_GAS" || true
         EX_FIL="$(read_fil "$EXISTING_ADDR")"
-        EX_FIL_HUMAN="${EX_FIL%.*}"
       fi
 
       # If we have tFIL but not enough USDFC for the FWSS deposit, try the
       # FilBucket faucet first (cheap, no collateral lock). Only fall back
       # to the Trove mint if the faucet rejects (already used, dry, etc.).
-      if [[ "$EX_FIL_HUMAN" != "0" ]] && [[ "${EX_USDFC_HUMAN:-0}" -lt "$MIN_USDFC_FOR_SETUP" ]]; then
+      if gte "$EX_FIL" "$MIN_TFIL_FOR_GAS" && ! gte "$EX_USDFC" "$MIN_USDFC_FOR_SETUP"; then
         echo
         step "Trying FilBucket faucet for the USDFC top-up"
         FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
@@ -568,11 +573,9 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
       # Re-read AFTER all top-up attempts so we know whether to even try setup-wallet.
       EX_FIL="$(read_fil "$EXISTING_ADDR")"
       EX_USDFC="$(read_usdfc "$EXISTING_ADDR")"
-      EX_FIL_HUMAN="${EX_FIL%.*}"
-      EX_USDFC_HUMAN="${EX_USDFC%.*}"
-      # setup-wallet calls Filecoin Pay deposit which requires >= 10 USDFC.
-      # Skip the noisy failure path when we still don't have enough.
-      if [[ "${EX_USDFC_HUMAN:-0}" -ge "$MIN_USDFC_FOR_SETUP" ]]; then
+      # setup-wallet calls Filecoin Pay deposit which requires >= 10 USDFC
+      # plus a tiny bit of tFIL for gas. Skip noisy failure if either short.
+      if gte "$EX_USDFC" "$MIN_USDFC_FOR_SETUP" && gte "$EX_FIL" "$MIN_TFIL_FOR_GAS"; then
         echo
         step "Running setup-wallet (Filecoin Pay + FWSS approval)"
         if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
@@ -581,7 +584,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         fi
       else
         echo
-        warn "Skipping setup-wallet — wallet has only ${EX_USDFC_HUMAN:-0} USDFC, need >= $MIN_USDFC_FOR_SETUP."
+        warn "Skipping setup-wallet — wallet has $EX_USDFC USDFC / $EX_FIL tFIL, need >= $MIN_USDFC_FOR_SETUP USDFC + $MIN_TFIL_FOR_GAS tFIL."
         info "  Top up the wallet, then run:"
         info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       fi
