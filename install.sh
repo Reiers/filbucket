@@ -113,9 +113,13 @@ read_usdfc() {
 #   $2 = optional minimum tFIL required (default 1, the faucet drip)
 #   $3 = optional timeout override
 # Returns 0 once balance >= min, 1 on timeout, 130 on Ctrl-C.
+# poll_tfil <addr> [min_tfil] [timeout_sec]
+#   min_tfil defaults to 0.1 (the FilBucket faucet drips 0.5; chainsafe gives
+#   100 in one click). For the Trove-mint precheck we explicitly pass 200.
+#   This is NOT the timeout slot — timeout is the THIRD arg.
 poll_tfil() {
   local addr="$1"
-  local min="${2:-1}"
+  local min="${2:-0.1}"
   local timeout="${3:-${FILBUCKET_FAUCET_TIMEOUT:-600}}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local start=$(date +%s)
@@ -497,7 +501,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
           ok "Faucet drip sent. Both txs broadcast."
           info "  Waiting for confirmation (~30-60s on calibration)..."
           sleep 30
-          poll_tfil "$EXISTING_ADDR" 60 || true
+          poll_tfil "$EXISTING_ADDR" 0.1 60 || true
           poll_usdfc "$EXISTING_ADDR" 60 || true
         else
           warn "Faucet unavailable. Response: $DRIP_RESP"
@@ -673,7 +677,8 @@ else
         info "  Waiting for confirmation (calibration ~30-60s)..."
         # Quick poll for both balances.
         sleep 30
-        if poll_tfil "$OPS_ADDR" 60 && poll_usdfc "$OPS_ADDR" 60; then
+        # 60-second timeouts (3rd arg). 2nd arg is min balance, not timeout.
+        if poll_tfil "$OPS_ADDR" 0.1 60 && poll_usdfc "$OPS_ADDR" 60; then
           ok "Wallet funded via FilBucket faucet."
         fi
       else
