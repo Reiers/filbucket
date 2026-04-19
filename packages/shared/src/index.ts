@@ -1,2 +1,2 @@
-export * from './file-state.js'
-export * from './api.js'
+export * from './file-state'
+export * from './api'

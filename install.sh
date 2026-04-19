@@ -5,7 +5,7 @@
 #   Installs FilBucket locally: infra (Postgres + Redis + MinIO via Homebrew),
 #   clones the repo, runs migrations, and starts the dev stack.
 #
-#   Safe by default: asks before doing anything destructive. Idempotent —
+#   Safe by default: asks before doing anything destructive. Idempotent -
 #   re-running skips what's already done.
 
 set -euo pipefail
@@ -26,13 +26,12 @@ fi
 print_banner() {
   cat <<EOF
 
-${BLUE}         __________________${RESET}          ${BOLD}${CREAM}FilBucket${RESET}
-${BLUE}        (                  )${RESET}         ${DIM}Dropbox for Filecoin.${RESET}
-${BLUE}       ${CYAN}████████${CREAM} ƒ ${CYAN}████████${RESET}
-${BLUE}       ${CYAN}██████████████████${RESET}          ${INK}one‑line install • calibration${RESET}
-${BLUE}        ${CYAN}████████████████${RESET}
-${BLUE}         ${CYAN}██████████████${RESET}
-${BLUE}          ‾‾‾‾‾‾‾‾‾‾‾‾${RESET}
+${BLUE}     ┌──────────────┐${RESET}      ${BOLD}${CREAM}FilBucket${RESET}
+${BLUE}     ${CYAN}██${CREAM} 🪣 ${CYAN}██${RESET}            ${DIM}Dropbox for Filecoin.${RESET}
+${BLUE}     ${CYAN}██████████${RESET}        ${INK}one-line install • calibration${RESET}
+${BLUE}      ${CYAN}████████${RESET}
+${BLUE}       ${CYAN}██████${RESET}
+${BLUE}         ̅ ̅ ̅ ̅ ̅ ̅${RESET}
 
 EOF
 }
@@ -109,10 +108,15 @@ read_usdfc() {
   " "$1" 2>/dev/null )
 }
 
-# Poll for tFIL only (after the faucet step). Optional 2nd arg overrides timeout.
+# Poll for tFIL only (after the faucet step).
+#   $1 = address
+#   $2 = optional minimum tFIL required (default 1, the faucet drip)
+#   $3 = optional timeout override
+# Returns 0 once balance >= min, 1 on timeout, 130 on Ctrl-C.
 poll_tfil() {
   local addr="$1"
-  local timeout="${2:-${FILBUCKET_FAUCET_TIMEOUT:-600}}"
+  local min="${2:-1}"
+  local timeout="${3:-${FILBUCKET_FAUCET_TIMEOUT:-600}}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local start=$(date +%s)
   local i=0
@@ -126,9 +130,10 @@ poll_tfil() {
       [[ "$bal" =~ ^[0-9]+\.[0-9]{0,4} ]] && bal="${BASH_REMATCH[0]}"
       bal=$(printf '%s' "$bal" | sed -E 's/0+$//; s/\.$//')
       [[ -z "$bal" ]] && bal="0"
-      if [[ "$bal" != "0" ]]; then
+      # Compare bal vs min using awk (handles decimals).
+      if awk -v b="$bal" -v m="$min" 'BEGIN { exit !(b+0 >= m+0) }'; then
         printf "\n"
-        ok "tFIL landed! $bal tFIL"
+        ok "tFIL landed! $bal tFIL (need >= $min)"
         trap - INT
         return 0
       fi
@@ -171,13 +176,13 @@ poll_usdfc() {
   done
 }
 
-# Legacy combined poller — kept for backward compat but unused in main flow now.
+# Legacy combined poller - kept for backward compat but unused in main flow now.
 poll_balances() {
   local addr="$1"
   local timeout="${FILBUCKET_FAUCET_TIMEOUT:-600}"
   local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
   local start=$(date +%s)
-  local i=0 fil_done=0 usdfc_done=0 fil_str='—' usdfc_str='—'
+  local i=0 fil_done=0 usdfc_done=0 fil_str='-' usdfc_str='-'
   trap 'printf "\n"; return 130' INT
   while true; do
     local now=$(date +%s)
@@ -394,7 +399,7 @@ MINIO_EOF
 fi
 
 # Wait for Postgres to accept connections
-info "Waiting for Postgres…"
+info "Waiting for Postgres..."
 for _ in {1..20}; do
   if "$PG_BIN/pg_isready" -h localhost -q 2>/dev/null; then break; fi
   sleep 0.5
@@ -456,7 +461,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
     EX_USDFC_HUMAN="${EX_USDFC%.*}"
     info "  Current chain balances:  tFIL ${BOLD}${EX_FIL_HUMAN}${RESET}   USDFC ${BOLD}${EX_USDFC_HUMAN}${RESET}"
     if [[ "$EX_FIL_HUMAN" == "0" ]] || [[ "$EX_USDFC_HUMAN" == "0" ]]; then
-      warn "Wallet exists but isn't fully funded yet — finishing the funding now."
+      warn "Wallet exists but isn't fully funded yet - finishing the funding now."
 
       # Try the FilBucket faucet first if BOTH are missing (clean fresh wallet).
       # Single drip covers tFIL + USDFC.
@@ -464,14 +469,14 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         echo
         step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
         FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
-        info "  Hitting $FAUCET_URL/drip…"
+        info "  Hitting $FAUCET_URL/drip..."
         DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
           -H 'content-type: application/json' \
           -d "{\"address\":\"$EXISTING_ADDR\"}" 2>&1)"
         DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
         if [[ -n "$DRIP_OK" ]]; then
           ok "Faucet drip sent. Both txs broadcast."
-          info "  Waiting for confirmation (~30-60s on calibration)…"
+          info "  Waiting for confirmation (~30-60s on calibration)..."
           sleep 30
           poll_tfil "$EXISTING_ADDR" 60 || true
           poll_usdfc "$EXISTING_ADDR" 60 || true
@@ -486,7 +491,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
       EX_FIL_HUMAN="${EX_FIL%.*}"
       EX_USDFC_HUMAN="${EX_USDFC%.*}"
 
-      # If we still need tFIL, the user has to do the faucet click — the
+      # If we still need tFIL, the user has to do the faucet click - the
       # FilBucket faucet won't drip again to the same address.
       if [[ "$EX_FIL_HUMAN" == "0" ]]; then
         echo
@@ -514,12 +519,12 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
           -d "{\"address\":\"$EXISTING_ADDR\"}" 2>&1)"
         DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
         if [[ -n "$DRIP_OK" ]]; then
-          ok "Faucet drip sent. Waiting for USDFC to land…"
+          ok "Faucet drip sent. Waiting for USDFC to land..."
           sleep 30
           poll_usdfc "$EXISTING_ADDR" 60 || true
         else
           warn "Faucet declined: $DRIP_RESP"
-          # Fall back to Trove mint — needs ~200 tFIL of collateral, so check first.
+          # Fall back to Trove mint - needs ~200 tFIL of collateral, so check first.
           EX_FIL="$(read_fil "$EXISTING_ADDR")"
           EX_FIL_INT="${EX_FIL%.*}"
           if [[ "${EX_FIL_INT:-0}" -lt 200 ]]; then
@@ -595,16 +600,16 @@ else
     update_env WEB_PORT 3010
     update_env NEXT_PUBLIC_API_URL http://localhost:4000
 
-    ok "Wallet generated — address: ${BOLD}$OPS_ADDR${RESET}"
+    ok "Wallet generated - address: ${BOLD}$OPS_ADDR${RESET}"
     echo
     info "Faucets are rate-limited but normally hands-free in a real browser."
     info "We'll open both, you paste ⌘V, click submit. Done."
     echo
     # In non-interactive mode (FILBUCKET_YES=1) we deliberately skip the browser
-    # step — there's no human to click submit, so polling would just hang. Print
+    # step - there's no human to click submit, so polling would just hang. Print
     # the funding instructions and continue.
     if [[ "${FILBUCKET_YES:-}" == "1" ]]; then
-      warn "Non-interactive mode — skipping wallet funding."
+      warn "Non-interactive mode - skipping wallet funding."
       info "  Fund + boot manually:"
       info "  1. Get tFIL: paste address at https://faucet.calibnet.chainsafe-fil.io/funds.html"
       info "  2. cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
@@ -614,14 +619,14 @@ else
       echo
       step "Trying FilBucket faucet (one-shot tFIL + USDFC drip)"
       FAUCET_URL="${FILBUCKET_FAUCET_URL:-http://157.180.16.39:8002}"
-      info "  Hitting $FAUCET_URL/drip…"
+      info "  Hitting $FAUCET_URL/drip..."
       DRIP_RESP="$(curl -sS -X POST "$FAUCET_URL/drip" \
         -H 'content-type: application/json' \
         -d "{\"address\":\"$OPS_ADDR\"}" 2>&1)"
       DRIP_OK="$(printf '%s' "$DRIP_RESP" | grep -o '"ok":true' || true)"
       if [[ -n "$DRIP_OK" ]]; then
         ok "Faucet drip sent. Both txs broadcast."
-        info "  Waiting for confirmation (calibration ~30-60s)…"
+        info "  Waiting for confirmation (calibration ~30-60s)..."
         # Quick poll for both balances.
         sleep 30
         if poll_tfil "$OPS_ADDR" 60 && poll_usdfc "$OPS_ADDR" 60; then
@@ -637,28 +642,38 @@ else
         fi
         open "https://faucet.calibnet.chainsafe-fil.io/funds.html" 2>/dev/null || true
         info "  Browser opened. ⌘V to paste address → click Send Funds (100 tFIL)."
-        info "  Polling chain every 10s for tFIL. Ctrl-C to skip."
+        info "  Polling chain every 10s for tFIL (need >= 200 for Trove mint). Ctrl-C to skip."
         echo
-        if poll_tfil "$OPS_ADDR"; then
+        # Trove needs ~195 tFIL collateral + 5 gas reserve. Wait for 200.
+        MINT_OK=0
+        if poll_tfil "$OPS_ADDR" 200; then
           echo
           step "Minting USDFC by collateralizing tFIL (Trove fallback)"
           info "  Deposits ~150 tFIL of collateral, borrows 220 USDFC. ~90s."
           echo
           if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server mint-usdfc 2>&1 | tail -25 ); then
             ok "USDFC minted via Trove"
+            MINT_OK=1
           else
             warn "USDFC mint failed. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
           fi
         else
-          warn "tFIL polling cancelled."
+          warn "tFIL polling cancelled or timed out before reaching 200 tFIL."
+          info "  Top up the wallet, then retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server mint-usdfc"
         fi
       fi
-      # Either path: try setup-wallet now if we have funds.
-      echo
-      step "Running setup-wallet (Filecoin Pay + FWSS approval)"
-      if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
-        ok "Ops wallet is approved + ready for uploads"
-        WALLET_READY=1
+      # Only run setup-wallet if we actually have USDFC to deposit.
+      # Otherwise it just fails noisily with "Insufficient USDFC".
+      if [[ "${MINT_OK:-0}" == "1" ]]; then
+        echo
+        step "Running setup-wallet (Filecoin Pay + FWSS approval)"
+        if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
+          ok "Ops wallet is approved + ready for uploads"
+          WALLET_READY=1
+        fi
+      else
+        info "  Skipping setup-wallet - no USDFC yet. Run it after minting:"
+        info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       fi
     else
       warn "Skipping. Fund + boot manually before first upload:"
@@ -695,7 +710,7 @@ if ! grep -q '^DEV_USER_ID=[0-9a-f-]' "$ENV_FILE" 2>/dev/null; then
     update_env NEXT_PUBLIC_DEFAULT_BUCKET_ID "$BUCKET_ID"
     ok "Seeded dev user + default bucket"
   else
-    warn "Seed ran but ids didn't parse — run it manually if the library shows empty."
+    warn "Seed ran but ids didn't parse - run it manually if the library shows empty."
   fi
 else
   ok "Dev user already configured"
@@ -708,13 +723,12 @@ ${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━�
 ${BOLD}${CREAM}  Your bucket is ready.${RESET}  ${DIM}Go fill it up.${RESET}
 ${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}
 
-${BLUE}           _____________________${RESET}
-${BLUE}          (                     )${RESET}        ${DIM}${FB_QUOTE}${RESET}
-${BLUE}        ${CYAN}▓▓▓▓▓▓▓▓▓▓${CREAM} ƒ ${CYAN}▓▓▓▓▓▓▓▓▓▓${RESET}
-${BLUE}        ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
-${BLUE}         ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
-${BLUE}          ${CYAN}▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓${RESET}
-${BLUE}           ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾${RESET}
+${BLUE}     ┌──────────────┐${RESET}      ${DIM}${FB_QUOTE}${RESET}
+${BLUE}     ${CYAN}▓▓${CREAM} 🪣 ${CYAN}▓▓${RESET}
+${BLUE}     ${CYAN}▓▓▓▓▓▓▓▓▓▓${RESET}
+${BLUE}      ${CYAN}████████${RESET}
+${BLUE}       ${CYAN}██████${RESET}
+${BLUE}         ̅ ̅ ̅ ̅ ̅ ̅${RESET}
 
   ${BOLD}Repo${RESET}     $INSTALL_DIR
   ${BOLD}Web${RESET}      ${BLUE}http://localhost:3010${RESET}
@@ -723,7 +737,7 @@ ${BLUE}           ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾${RESET}
 
 EOF
 
-# Conditional "next steps" block — only shown if wallet isn't fully ready.
+# Conditional "next steps" block - only shown if wallet isn't fully ready.
 if [[ "${WALLET_READY:-0}" != "1" ]]; then
   cat <<EOF
   ${BOLD}Next${RESET}
@@ -749,24 +763,32 @@ PID_FILE="$LOG_DIR/dev.pid"
 WEB_ENV_OK=1
 for v in NEXT_PUBLIC_DEV_USER_ID NEXT_PUBLIC_DEFAULT_BUCKET_ID NEXT_PUBLIC_API_URL; do
   if ! grep -q "^$v=[^[:space:]].*" "$ENV_FILE" 2>/dev/null; then
-    warn "$v missing from .env — web will compile but show an empty library."
+    warn "$v missing from .env - web will compile but show an empty library."
     WEB_ENV_OK=0
   fi
 done
 [[ "$WEB_ENV_OK" == "1" ]] && ok "Web env vars look good"
 
 # Kill any stale pnpm-dev / next-dev / tsx-watch from prior installer attempts.
-# This is the #1 source of port :3010 / :4000 conflicts.
-if lsof -nP -iTCP:3010 -sTCP:LISTEN 2>/dev/null | grep -q node; then
-  warn "Something's already on :3010 — killing it first"
-  lsof -nP -iTCP:3010 -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
-  sleep 1
+# Catches both pidfile-tracked AND ghost processes that the pidfile missed
+# (e.g. someone ran `pnpm dev` manually). #1 source of :3010 / :4000 conflicts.
+if [[ -f "$PID_FILE" ]]; then
+  OLD_PID="$(cat "$PID_FILE" 2>/dev/null)"
+  if [[ -n "$OLD_PID" ]] && kill -0 "$OLD_PID" 2>/dev/null; then
+    warn "Killing previous dev stack (pid $OLD_PID)"
+    kill "$OLD_PID" 2>/dev/null || true
+    sleep 1
+  fi
+  rm -f "$PID_FILE"
 fi
-if lsof -nP -iTCP:4000 -sTCP:LISTEN 2>/dev/null | grep -q node; then
-  warn "Something's already on :4000 — killing it first"
-  lsof -nP -iTCP:4000 -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
-  sleep 1
-fi
+for PORT in 3010 4000; do
+  PIDS=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | awk 'NR>1 && /node/ {print $2}' | sort -u)
+  if [[ -n "$PIDS" ]]; then
+    warn "Something's already on :$PORT (pids: $PIDS) — killing it first"
+    echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
+    sleep 1
+  fi
+done
 
 step "Starting the dev stack in the background"
 # macOS default ulimit -n is 256 which Next.js watcher blows through immediately.
@@ -774,26 +796,41 @@ step "Starting the dev stack in the background"
 (
   ulimit -n 10240 2>/dev/null || true
   cd "$INSTALL_DIR"
-  nohup pnpm dev > "$LOG_FILE" 2>&1 &
+  # Explicit </dev/null is critical: when nohup inherits a piped stdin
+  # (e.g. `curl | bash`), Next.js dev sometimes wedges and serves 404
+  # for routes that should compile fine. Disconnecting stdin fixes it.
+  nohup pnpm dev > "$LOG_FILE" 2>&1 < /dev/null &
   echo $! > "$PID_FILE"
   disown $! 2>/dev/null || true
 )
 ok "Launched (log: $LOG_FILE)"
-info "  Waiting for web :3010 to respond (up to 90s)…"
+info "  Waiting for web :3010 to respond (up to 90s)..."
 READY=0
+READY_CODE=""
 for i in {1..90}; do
-  if curl -sf http://localhost:3010 >/dev/null 2>&1; then READY=1; break; fi
+  # Accept any HTTP status - if we get a code back, the server is up.
+  # Filtering on 2xx hides legit "server up but page errors" cases (next.js compile errs).
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://localhost:3010 2>/dev/null || echo 000)
+  if [[ "$CODE" =~ ^[1-5][0-9][0-9]$ ]] && [[ "$CODE" != "000" ]]; then
+    READY=1; READY_CODE="$CODE"; break
+  fi
   # Early-exit if the process died.
   if [[ -f "$PID_FILE" ]] && ! kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
     break
   fi
   sleep 1
 done
-if [[ "$READY" == "1" ]]; then
+if [[ "$READY" == "1" ]] && [[ "$READY_CODE" =~ ^2 ]]; then
   ok "Web is up at ${BLUE}http://localhost:3010${RESET}"
   if [[ "$(uname -s)" == "Darwin" ]]; then
     open http://localhost:3010 2>/dev/null || true
   fi
+elif [[ "$READY" == "1" ]]; then
+  warn "Web responded with HTTP $READY_CODE - server is up but the page errored. Last 30 lines:"
+  echo
+  tail -30 "$LOG_FILE" 2>/dev/null | sed 's/^/    /'
+  echo
+  info "  Full log:  tail -f $LOG_FILE"
 else
   warn "Web didn't respond. Last 30 lines of the log:"
   echo
