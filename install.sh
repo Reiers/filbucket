@@ -565,6 +565,18 @@ if [[ -f "$ENV_FILE" ]] && grep -q '^FILBUCKET_OPS_PK=0x[0-9a-fA-F]' "$ENV_FILE"
         info "  Top up the wallet, then run:"
         info "    cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
       fi
+    else
+      # Wallet is already funded above the FWSS deposit threshold. Still
+      # run setup-wallet because the FWSS approval might not be in place
+      # yet (idempotent on subsequent runs).
+      echo
+      step "Running setup-wallet (Filecoin Pay + FWSS approval)"
+      if ( cd "$INSTALL_DIR" && pnpm --filter @filbucket/server setup-wallet 2>&1 | tail -20 ); then
+        ok "Ops wallet approved + ready for uploads"
+        WALLET_READY=1
+      else
+        warn "setup-wallet exited non-zero. Retry: cd $INSTALL_DIR && pnpm --filter @filbucket/server setup-wallet"
+      fi
     fi
   fi
 else
