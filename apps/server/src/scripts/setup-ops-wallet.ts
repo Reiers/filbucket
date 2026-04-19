@@ -55,6 +55,10 @@ async function main(): Promise<void> {
     } else {
       console.log(`depositing ${fmt(delta)} USDFC into Filecoin Pay…`)
       // Try the one-shot permit+approve path first; fall back to plain deposit on failure.
+      // We MUST wait for receipts — the synapse-sdk methods return as soon as
+      // the tx is broadcast, but Filecoin Calibration takes ~30s to include
+      // a tipset. Reading state before then sees pre-tx values and the post-
+      // setup assertWalletReady() check fails spuriously.
       try {
         const hash = await s.payments.depositWithPermitAndApproveOperator({
           amount: delta,
@@ -63,12 +67,17 @@ async function main(): Promise<void> {
           maxLockupPeriod: DAYS_30_EPOCHS,
         })
         console.log(`  depositWithPermitAndApproveOperator tx: ${hash}`)
+        console.log('  waiting for inclusion (~30-60s on calibration)…')
+        await s.client.waitForTransactionReceipt({ hash, timeout: 180_000 })
+        console.log('  confirmed.')
       } catch (err) {
         console.warn(
           `  permit-based deposit failed (${err instanceof Error ? err.message : String(err)}); falling back to plain deposit + approveService.`,
         )
         const depositHash = await s.payments.deposit({ amount: delta })
         console.log(`  deposit tx: ${depositHash}`)
+        await s.client.waitForTransactionReceipt({ hash: depositHash, timeout: 180_000 })
+        console.log('  deposit confirmed.')
       }
     }
   } else {
@@ -89,6 +98,9 @@ async function main(): Promise<void> {
       maxLockupPeriod: DAYS_30_EPOCHS,
     })
     console.log(`  approveService tx: ${hash}`)
+    console.log('  waiting for inclusion (~30-60s on calibration)…')
+    await s.client.waitForTransactionReceipt({ hash, timeout: 180_000 })
+    console.log('  confirmed.')
   } else {
     console.log(
       `FWSS approval already sufficient (rate=${fmt(currentRate)}, lockup=${fmt(currentLockup)}).`,

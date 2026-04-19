@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { FILE_STATE_VALUES } from './file-state'
+import { FILE_STATE_VALUES } from './file-state.js'
 
 // --- Zod schemas (wire contracts) ---
 
