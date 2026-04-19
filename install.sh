@@ -795,7 +795,9 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 for PORT in 3010 4000; do
-  PIDS=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | awk 'NR>1 && /node/ {print $2}' | sort -u)
+  # `lsof` exits 1 when no matches; combined with `set -o pipefail`
+  # that kills the whole script. Hence the trailing `|| true`.
+  PIDS=$(lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | awk 'NR>1 && /node/ {print $2}' | sort -u || true)
   if [[ -n "$PIDS" ]]; then
     warn "Something's already on :$PORT (pids: $PIDS) - killing it first"
     echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
